@@ -29,11 +29,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate artifact attestation for sdist and wheel
-        uses: actions/attest-build-provenance@bdd51370e0416ac948727f861e03c2f05d32d78e # v1.3.2
-        with:
-          subject-path: "dist/cuda-histogram-*"
-
       - uses: hynek/build-and-inspect-python-package@v2
 
   publish:
@@ -55,19 +50,5 @@ jobs:
 
       - name: List distributions to be deployed
         run: ls -l dist/
-
-      - name: Verify sdist artifact attestation
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run:
-          gh attestation verify dist/cuda-histogram-*.tar.gz --repo ${{
-          github.repository }}
-
-      - name: Verify wheel artifact attestation
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run:
-          gh attestation verify dist/cuda-histogram-*.whl --repo ${{
-          github.repository }}
 
       - uses: pypa/gh-action-pypi-publish@release/v1
