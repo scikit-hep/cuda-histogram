@@ -83,7 +83,7 @@ def overflow_behavior(overflow):
     elif overflow == "justnan":
         return slice(-1, None)
     else:
-        raise ValueError("Unrecognized overflow behavior: %s" % overflow)
+        raise ValueError(f"Unrecognized overflow behavior: {overflow}")
 
 
 @functools.total_ordering
@@ -144,7 +144,7 @@ class Interval:
             return False
         if other.nan() and self.nan():
             return True
-        if self._lo == other._lo and self._hi == other._hi:
+        if self._lo == other._lo and self._hi == other._hi:  # noqa: SIM103
             return True
         return False
 
@@ -195,7 +195,7 @@ class StringBin:
     def __init__(self, name, label=None):
         if not isinstance(name, basestring):
             raise TypeError(
-                "StringBin only supports string categories, received a %r" % name
+                f"StringBin only supports string categories, received a {name!r}"
             )
         elif "*" in name:
             raise ValueError(
@@ -269,16 +269,14 @@ class Axis:
 
     def __eq__(self, other):
         if isinstance(other, Axis):
-            if self._name != other._name:
+            if self._name != other._name:  # noqa: SIM103
                 return False
             # label doesn't matter
             return True
         elif isinstance(other, basestring):
             # Convenient for testing axis in list by name
-            if self._name != other:
-                return False
-            return True
-        raise TypeError("Cannot compare an Axis with a %r" % other)
+            return not self._name != other
+        raise TypeError(f"Cannot compare an Axis with a {other!r}")
 
 
 class SparseAxis(Axis):
@@ -356,7 +354,7 @@ class Cat(SparseAxis):
 
     def __getitem__(self, index):
         if not isinstance(index, StringBin):
-            raise TypeError("Expected a StringBin object, got: %r" % index)
+            raise TypeError(f"Expected a StringBin object, got: {index!r}")
         identifier = index.name
         if identifier not in self._bins:
             raise KeyError("No identifier %r in this Category axis")
@@ -375,7 +373,7 @@ class Cat(SparseAxis):
         elif isinstance(the_slice, list):
             if not all(k in self._sorted for k in the_slice):
                 warnings.warn(
-                    "Not all requested indices present in %r" % self, RuntimeWarning
+                    f"Not all requested indices present in {self!r}", RuntimeWarning
                 )
             out = [k for k in self._sorted if k in the_slice]
         elif isinstance(the_slice, slice):
@@ -419,7 +417,7 @@ class Cat(SparseAxis):
             # this will be checked in any Hist.identifiers() call accessing this axis
             pass
         else:
-            raise AttributeError("Invalid axis sorting type: %s" % newsorting)
+            raise AttributeError(f"Invalid axis sorting type: {newsorting}")
         self._sorting = newsorting
 
     def identifiers(self):
@@ -501,7 +499,7 @@ class Bin(DenseAxis):
             self._bin_names = np.full(self._interval_bins[:-1].size, None)
         else:
             raise TypeError(
-                "Cannot understand n_or_arr (nbins or binning array) type %r" % n_or_arr
+                f"Cannot understand n_or_arr (nbins or binning array) type {n_or_arr!r}"
             )
 
     @property
@@ -603,7 +601,7 @@ class Bin(DenseAxis):
                 return False
             if self._uniform and self._bins != other._bins:
                 return False
-            if not self._uniform and not all(self._bins == other._bins):
+            if not self._uniform and not all(self._bins == other._bins):  # noqa: SIM103
                 return False
             return True
         return super().__eq__(other)
@@ -1028,7 +1026,7 @@ class Hist(AccumulatorABC):
             d.name for d in other.sparse_axes()
         }:
             return False
-        if not all(d1 == d2 for d1, d2 in zip(self.dense_axes(), other.dense_axes())):
+        if not all(d1 == d2 for d1, d2 in zip(self.dense_axes(), other.dense_axes())):  # noqa: SIM103
             return False
         return True
 
@@ -1036,8 +1034,7 @@ class Hist(AccumulatorABC):
         """Add another histogram into this one, in-place"""
         if not self.compatible(other):
             raise ValueError(
-                "Cannot add this histogram with histogram %r of dissimilar dimensions"
-                % other
+                f"Cannot add this histogram with histogram {other!r} of dissimilar dimensions"
             )
 
         raxes = other.sparse_axes()

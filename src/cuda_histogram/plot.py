@@ -216,7 +216,7 @@ def plot1d(
         raise ValueError("Cannot use density and binwnorm at the same time!")
     if binwnorm is not None and not isinstance(binwnorm, numbers.Number):
         raise ValueError(
-            "Bin width normalization not a number, but a %r" % binwnorm.__class__
+            f"Bin width normalization not a number, but a {binwnorm.__class__!r}"
         )
     if line_opts is None and fill_opts is None and error_opts is None:
         if stack:
@@ -447,7 +447,7 @@ def plotratio(
                 normal_interval(sumw_num, sumw_denom, sumw2_num, sumw2_denom)
             )
         else:
-            raise ValueError("Unrecognized uncertainty option: %r" % unc)
+            raise ValueError(f"Unrecognized uncertainty option: {unc!r}")
 
         if error_opts is not None:
             opts = {"label": label, "linestyle": "none"}
@@ -546,7 +546,7 @@ def plot2d(
         raise ValueError("Cannot use density and binwnorm at the same time!")
     if binwnorm is not None and not isinstance(binwnorm, numbers.Number):
         raise ValueError(
-            "Bin width normalization not a number, but a %r" % binwnorm.__class__
+            f"Bin width normalization not a number, but a {binwnorm.__class__!r}"
         )
     if patch_opts is None and text_opts is None:
         patch_opts = {}
@@ -666,7 +666,7 @@ def plotgrid(
             "More than one dimension left: {}".format(",".join(ax for ax in haxes))
         )
     elif len(haxes) == 0:
-        raise ValueError("Not enough dimensions available in %r" % h)
+        raise ValueError(f"Not enough dimensions available in {h!r}")
 
     figsize = plt.rcParams["figure.figsize"]
     figsize = figsize[0] * max(ncol, 1), figsize[1] * max(nrow, 1)
