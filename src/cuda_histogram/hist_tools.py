@@ -1599,7 +1599,7 @@ class Hist(AccumulatorABC):
         return out
 
     def to_hist(self):
-        """Convert this chist histogram to a hist object"""
+        """Convert the cuda_histogram histogram to a hist object"""
         import hist
 
         return hist.Hist(self.to_boost())
