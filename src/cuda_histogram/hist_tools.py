@@ -7,22 +7,11 @@ import re
 import warnings
 from abc import ABCMeta, abstractmethod
 from collections import namedtuple
+from collections.abc import Sequence
 
 import awkward
 import cupy
 import numpy as np
-
-# Python 2 and 3 compatibility
-_regex_pattern = re.compile("dummy").__class__
-try:
-    basestring  # noqa: B018
-except NameError:
-    basestring = str
-
-try:
-    from collections.abc import Sequence
-except ImportError:
-    from collections.abc import Sequence
 
 MaybeSumSlice = namedtuple("MaybeSumSlice", ["start", "stop", "sum"])
 
@@ -115,9 +104,7 @@ class Interval:
             return self._label
         if self.nan():
             return "(nanflow)"
-        # string representation of floats is apparently a touchy subject.. further reading:
-        # https://stackoverflow.com/questions/25898733/why-does-strfloat-return-more-digits-in-python-3-than-python-2
-        return "{}{:.12g}, {:.12g})".format(
+        return "{}{}, {})".format(
             "(" if self._lo == -np.inf else "[",
             self._lo,
             self._hi,
@@ -193,7 +180,7 @@ class StringBin:
     """
 
     def __init__(self, name, label=None):
-        if not isinstance(name, basestring):
+        if not isinstance(name, str):
             raise TypeError(
                 f"StringBin only supports string categories, received a {name!r}"
             )
@@ -273,7 +260,7 @@ class Axis:
                 return False
             # label doesn't matter
             return True
-        elif isinstance(other, basestring):
+        elif isinstance(other, str):
             # Convenient for testing axis in list by name
             return not self._name != other
         raise TypeError(f"Cannot compare an Axis with a {other!r}")
@@ -364,9 +351,9 @@ class Cat(SparseAxis):
         out = None
         if isinstance(the_slice, StringBin):
             out = [the_slice.name]
-        elif isinstance(the_slice, _regex_pattern):
+        elif isinstance(the_slice, re.Pattern):
             out = [k for k in self._sorted if the_slice.match(k)]
-        elif isinstance(the_slice, basestring):
+        elif isinstance(the_slice, str):
             pattern = "^" + re.escape(the_slice).replace(r"\*", ".*") + "$"
             m = re.compile(pattern)
             out = [k for k in self._sorted if m.match(k)]
@@ -380,11 +367,11 @@ class Cat(SparseAxis):
             if the_slice.step is not None:
                 raise IndexError("Not sure how to use slice step for categories...")
             start, stop = 0, len(self._sorted)
-            if isinstance(the_slice.start, basestring):
+            if isinstance(the_slice.start, str):
                 start = self._sorted.index(the_slice.start)
             else:
                 start = the_slice.start
-            if isinstance(the_slice.stop, basestring):
+            if isinstance(the_slice.stop, str):
                 stop = self._sorted.index(the_slice.stop)
             else:
                 stop = the_slice.stop
@@ -775,7 +762,7 @@ class AccumulatorABC(metaclass=ABCMeta):
     After defining an accumulator::
 
         from coffea.processor import dict_accumulator, column_accumulator, defaultdict_accumulator
-        from coffea.hist import Hist, Bin
+        from cuda_histogram import Hist, Bin
         import numpy as np
 
         adef = dict_accumulator({
@@ -861,26 +848,28 @@ class Hist(AccumulatorABC):
 
     Creating a histogram with a sparse axis, and two dense axes::
 
-        h = coffea.hist.Hist("Observed bird count",
-                             coffea.hist.Cat("species", "Bird species"),
-                             coffea.hist.Bin("x", "x coordinate [m]", 20, -5, 5),
-                             coffea.hist.Bin("y", "y coordinate [m]", 20, -5, 5),
+        import cuda_histogram as chist
+
+        h = chist.Hist("Observed bird count",
+                             chist.Cat("species", "Bird species"),
+                             chist.Bin("x", "x coordinate [m]", 20, -5, 5),
+                             chist.Bin("y", "y coordinate [m]", 20, -5, 5),
                              )
 
         # or
 
-        h = coffea.hist.Hist(label="Observed bird count",
-                             axes=(coffea.hist.Cat("species", "Bird species"),
-                                   coffea.hist.Bin("x", "x coordinate [m]", 20, -5, 5),
-                                   coffea.hist.Bin("y", "y coordinate [m]", 20, -5, 5),
+        h = chist.Hist(label="Observed bird count",
+                             axes=(chist.Cat("species", "Bird species"),
+                                   chist.Bin("x", "x coordinate [m]", 20, -5, 5),
+                                   chist.Bin("y", "y coordinate [m]", 20, -5, 5),
                                   )
                              )
 
         # or
 
-        h = coffea.hist.Hist(axes=[coffea.hist.Cat("species", "Bird species"),
-                                   coffea.hist.Bin("x", "x coordinate [m]", 20, -5, 5),
-                                   coffea.hist.Bin("y", "y coordinate [m]", 20, -5, 5),
+        h = chist.Hist(axes=[chist.Cat("species", "Bird species"),
+                                   chist.Bin("x", "x coordinate [m]", 20, -5, 5),
+                                   chist.Bin("y", "y coordinate [m]", 20, -5, 5),
                                   ],
                              label="Observed bird count",
                              )
@@ -896,12 +885,10 @@ class Hist(AccumulatorABC):
     DEFAULT_DTYPE = "d"
 
     def __init__(self, label, *axes, **kwargs):
-        if not isinstance(label, basestring):
+        if not isinstance(label, str):
             raise TypeError("label must be a string")
         self._label = label
-        self._dtype = kwargs.pop(
-            "dtype", Hist.DEFAULT_DTYPE
-        )  # Much nicer in python3 :(
+        self._dtype = kwargs.get("dtype", Hist.DEFAULT_DTYPE)
         self._axes = axes
         if len(axes) == 0 and "axes" in kwargs:
             if not isinstance(kwargs["axes"], Sequence):
@@ -1612,7 +1599,7 @@ class Hist(AccumulatorABC):
         return out
 
     def to_hist(self):
-        """Convert this coffea.hist histogram to a hist object"""
+        """Convert the cuda_histogram histogram to a hist object"""
         import hist
 
         return hist.Hist(self.to_boost())
