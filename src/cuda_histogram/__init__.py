@@ -1,14 +1,9 @@
-"""Histogramming tools
+"""
+`cuda-histogram` is a histogram filling, transformation, and plotting package for GPUs.
 
-`cuda-histogram` is a histogram filling, transformation, and plotting sub-package, utilizing
-numpy arrays for storage and matplotlib plotting routines for visualization.
-
-Features found in this package are similar to those found in
-packages such as `histbook <https://github.com/scikit-hep/histbook>`__ (deprecated),
-`boost-histogram <https://github.com/scikit-hep/boost-histogram>`__ (in development),
-`physt <https://github.com/scikit-hep/boost-histogram>`__, and built-in numpy
-`histogram <https://docs.scipy.org/doc/numpy/reference/generated/numpy.histogram.html>`__ utilities.
-
+The package follows `UHI <https://uhi.readthedocs.io>`__ and keeps its API similar to
+`boost-histogram <https://github.com/scikit-hep/boost-histogram>`__
+`and hist <https://github.com/scikit-hep/hist>`__.
 """
 
 from __future__ import annotations
