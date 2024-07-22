@@ -4,9 +4,15 @@ import awkward as ak
 import numpy as np
 import pytest
 
-import cuda_histogram
+cp = pytest.importorskip("cupy")
 
-pytest.importorskip("cupy")
+import cuda_histogram  # noqa: E402
+
+# cupy might be installable on a device with no GPUs
+try:
+    cp.cuda.runtime.getDeviceCount()
+except cp.cuda.runtime.CUDARuntimeError:
+    pytest.skip("CUDA not found", allow_module_level=True)
 
 
 def dummy_jagged_eta_pt():

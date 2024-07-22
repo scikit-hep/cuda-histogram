@@ -13,10 +13,10 @@
 [![Conda latest release][conda-version]][conda-link]
 [![LICENSE][license-badge]][license-link] [![Scikit-HEP][sk-badge]][sk-link]
 
-`cuda-histogram` is a histogram filling, transformation, and plotting package
-for GPUs. The package follows [UHI](https://uhi.readthedocs.io) and keeps its
-API similar to [boost-histogram](https://github.com/scikit-hep/boost-histogram)
-and [hist](https://github.com/scikit-hep/hist).
+`cuda-histogram` is a histogram filling package for GPUs. The package follows
+[UHI](https://uhi.readthedocs.io) and keeps its API similar to
+[boost-histogram](https://github.com/scikit-hep/boost-histogram) and
+[hist](https://github.com/scikit-hep/hist).
 
 The package is under active development at the moment.
 
