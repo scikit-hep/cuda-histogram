@@ -8,4 +8,3 @@ Submodules
    :maxdepth: 3
 
    cuda_histogram.hist_tools
-   cuda_histogram.plot
