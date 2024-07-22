@@ -8,7 +8,9 @@ cp = pytest.importorskip("cupy")
 
 import cuda_histogram  # noqa: E402
 
-if cp.cuda.runtime.getDeviceCount() < 1:
+try:
+    cp.cuda.runtime.getDeviceCount()
+except cp.cuda.runtime.CUDARuntimeError:
     pytest.skip("CUDA not found", allow_module_level=True)
 
 
