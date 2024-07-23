@@ -35,8 +35,8 @@ def test_hist():
 
     h_regular_bins = cuda_histogram.Hist(
         "regular joe",
-        cuda_histogram.Bin("x", "x", 20, 0, 200),
-        cuda_histogram.Bin("y", "why", 20, -3, 3),
+        cuda_histogram.axis.Bin("x", "x", 20, 0, 200),
+        cuda_histogram.axis.Bin("y", "why", 20, -3, 3),
     )
     h_regular_bins.fill(x=test_pt, y=test_eta)
     nentries = np.sum(counts)
@@ -63,8 +63,8 @@ def test_hist():
     assert h_reduced.integrate("x", slice(20, 30)).values()[()][2] == count_some_bin + 1
     assert h_reduced.integrate("y", slice(0, 0.3)).values()[()][1] == count_some_bin + 1
 
-    animal = cuda_histogram.Cat("animal", "type of animal")
-    vocalization = cuda_histogram.Cat(
+    animal = cuda_histogram.axis.Cat("animal", "type of animal")
+    vocalization = cuda_histogram.axis.Cat(
         "vocalization", "onomatopoiea is that how you spell it?"
     )
     h_cat_bins = cuda_histogram.Hist("I like cats", animal, vocalization)
@@ -80,14 +80,14 @@ def test_hist():
         ("dog",)
     ] == (101.0, 10001.0)
 
-    height = cuda_histogram.Bin("height", "height [m]", 10, 0, 5)
+    height = cuda_histogram.axis.Bin("height", "height [m]", 10, 0, 5)
     h_mascots_1 = cuda_histogram.Hist(
         "fermi mascot showdown",
         animal,
         vocalization,
         height,
         # weight is a reserved keyword
-        cuda_histogram.Bin(
+        cuda_histogram.axis.Bin(
             "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
         ),
     )
@@ -99,7 +99,7 @@ def test_hist():
             vocalization,
             height,
             # weight is a reserved keyword
-            cuda_histogram.Bin(
+            cuda_histogram.axis.Bin(
                 "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
             ),
         ),
@@ -111,7 +111,7 @@ def test_hist():
             vocalization,
             height,
             # weight is a reserved keyword
-            cuda_histogram.Bin(
+            cuda_histogram.axis.Bin(
                 "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
             ),
         ],
@@ -125,7 +125,7 @@ def test_hist():
             vocalization,
             height,
             # weight is a reserved keyword
-            cuda_histogram.Bin(
+            cuda_histogram.axis.Bin(
                 "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
             ),
             axes=[
@@ -133,7 +133,7 @@ def test_hist():
                 vocalization,
                 height,
                 # weight is a reserved keyword
-                cuda_histogram.Bin(
+                cuda_histogram.axis.Bin(
                     "mass",
                     "weight (g=9.81m/s**2) [kg]",
                     np.power(10.0, np.arange(5) - 1),
@@ -188,7 +188,7 @@ def test_hist():
         == 1040.0
     )
 
-    species_class = cuda_histogram.Cat(
+    species_class = cuda_histogram.axis.Cat(
         "species_class", "where the subphylum is vertibrates"
     )
     classes = {
@@ -224,7 +224,9 @@ def test_hist():
     assert h_species.axis("height") is height
     assert h_species.integrate("vocalization", "h*").axis("height") is height
 
-    tall_class = cuda_histogram.Cat("tall_class", "species class (species above 1m)")
+    tall_class = cuda_histogram.axis.Cat(
+        "tall_class", "species class (species above 1m)"
+    )
     mapping = {
         "birds": (["goose", "crane"], slice(1.0, None)),
         "mammals": (["bison", "fox"], slice(1.0, None)),
@@ -246,8 +248,8 @@ def test_hist_serdes():
 
     h_regular_bins = cuda_histogram.Hist(
         "regular joe",
-        cuda_histogram.Bin("x", "x", 20, 0, 200),
-        cuda_histogram.Bin("y", "why", 20, -3, 3),
+        cuda_histogram.axis.Bin("x", "x", 20, 0, 200),
+        cuda_histogram.axis.Bin("y", "why", 20, -3, 3),
     )
 
     h_regular_bins.fill(
@@ -269,7 +271,7 @@ def test_hist_serdes():
 def test_hist_serdes_labels():
     import pickle
 
-    ax = cuda_histogram.Bin("asdf", "asdf", 3, 0, 3)
+    ax = cuda_histogram.axis.Bin("asdf", "asdf", 3, 0, 3)
     ax.identifiers()[0].label = "type 1"
     h = cuda_histogram.Hist("a", ax)
     h.identifiers("asdf")
@@ -288,9 +290,9 @@ def test_hist_serdes_labels():
 def test_issue_247():
     import cuda_histogram
 
-    h = cuda_histogram.Hist("stuff", cuda_histogram.Bin("old", "old", 20, -1, 1))
+    h = cuda_histogram.Hist("stuff", cuda_histogram.axis.Bin("old", "old", 20, -1, 1))
     h.fill(old=h.axis("old").centers())
-    h2 = h.rebin(h.axis("old"), cuda_histogram.Bin("new", "new", 10, -1, 1))
+    h2 = h.rebin(h.axis("old"), cuda_histogram.axis.Bin("new", "new", 10, -1, 1))
     # check first if its even possible to have correct binning
     assert np.all(h2.axis("new").edges() == h.axis("old").edges()[::2])
     # make sure the lookup works properly
@@ -300,16 +302,16 @@ def test_issue_247():
 
     with pytest.raises(ValueError):
         # invalid division
-        _ = h.rebin(h.axis("old"), cuda_histogram.Bin("new", "new", 8, -1, 1))
+        _ = h.rebin(h.axis("old"), cuda_histogram.axis.Bin("new", "new", 8, -1, 1))
 
-    newaxis = cuda_histogram.Bin(
+    newaxis = cuda_histogram.axis.Bin(
         "new", "new", h.axis("old").edges()[np.cumsum([0, 2, 3, 5])]
     )
     h.rebin("old", newaxis)
 
 
 def test_issue_333():
-    axis = cuda_histogram.Bin("channel", "Channel b1", 50, 0, 2000)
+    axis = cuda_histogram.axis.Bin("channel", "Channel b1", 50, 0, 2000)
     temp = np.arange(0, 2000, 40, dtype=np.int16)
     assert np.all(axis.index(temp).get() == np.arange(50) + 1)
 
@@ -317,14 +319,14 @@ def test_issue_333():
 def test_issue_394():
     dummy = cuda_histogram.Hist(
         "Dummy",
-        cuda_histogram.Cat("sample", "sample"),
-        cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
+        cuda_histogram.axis.Cat("sample", "sample"),
+        cuda_histogram.axis.Bin("dummy", "Number of events", 1, 0, 1),
     )
     dummy.fill(sample="test", dummy=1, weight=0.5)
 
 
 def test_fill_none():
-    dummy = cuda_histogram.Hist("Dummy", cuda_histogram.Bin("x", "asdf", 1, 0, 1))
+    dummy = cuda_histogram.Hist("Dummy", cuda_histogram.axis.Bin("x", "asdf", 1, 0, 1))
     with pytest.raises(ValueError):
         # attempt to fill with none
         dummy.fill(x=ak.Array([0.1, None, 0.3]))
@@ -338,8 +340,8 @@ def test_boost_conversion():
 
     dummy = cuda_histogram.Hist(
         "Dummy",
-        cuda_histogram.Cat("sample", "sample"),
-        cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
+        cuda_histogram.axis.Cat("sample", "sample"),
+        cuda_histogram.axis.Bin("dummy", "Number of events", 1, 0, 1),
     )
     dummy.fill(sample="test", dummy=1, weight=0.5)
     dummy.fill(sample="test", dummy=0.1)
@@ -362,8 +364,8 @@ def test_boost_conversion():
 
     dummy = cuda_histogram.Hist(
         "Dummy",
-        cuda_histogram.Cat("sample", "sample"),
-        cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
+        cuda_histogram.axis.Cat("sample", "sample"),
+        cuda_histogram.axis.Bin("dummy", "Number of events", 1, 0, 1),
     )
     dummy.fill(sample="test", dummy=0.1)
     dummy.fill(sample="test", dummy=0.2)
