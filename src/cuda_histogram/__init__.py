@@ -8,15 +8,13 @@ The package follows `UHI <https://uhi.readthedocs.io>`__ and keeps its API simil
 
 from __future__ import annotations
 
-from cuda_histogram.hist_tools import Bin, Cat, Hist, Interval, StringBin
+from cuda_histogram import axis
+from cuda_histogram.hist import Hist
 
 from ._version import version as __version__
 
 __all__: list[str] = [
     "Hist",
-    "Bin",
-    "Interval",
-    "Cat",
-    "StringBin",
+    "axis",
     "__version__",
 ]
