@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import functools
-import numbers
 import re
 import warnings
+from typing import Any, Iterable
 
-import awkward
+import boost_histogram.axis as bha
 import cupy
+import hist
 import numpy as np
 
 __all__: list[str] = [
@@ -32,21 +33,11 @@ _clip_bins = cupy.ElementwiseKernel(
 )
 
 
-def _overflow_behavior(overflow):
-    if overflow == "none":
-        return slice(1, -2)
-    elif overflow == "under":
-        return slice(None, -2)
-    elif overflow == "over":
+def _overflow_behavior(flow):
+    if not flow:
         return slice(1, -1)
-    elif overflow == "all":
-        return slice(None, -1)
-    elif overflow == "allnan":
-        return slice(None)
-    elif overflow == "justnan":
-        return slice(-1, None)
     else:
-        raise ValueError(f"Unrecognized overflow behavior: {overflow}")
+        return slice(None, None)
 
 
 @functools.total_ordering
@@ -383,27 +374,7 @@ class Cat(SparseAxis):
         return [self._bins[k] for k in self._sorted]
 
 
-class DenseAxis(Axis):
-    """
-    DenseAxis: ABC for a fixed-size densely-indexed axis
-
-    Derived should implement:
-        **index(identifier)** - return an index
-
-        **__eq__(axis)** - axis has same definition and binning
-
-        **__getitem__(index)** - return an identifier
-
-        **_ireduce(slice)** - return a slice or list of indices, input slice to be interpred as values
-
-        **reduced(islice)** - return a new axis with binning corresponding to the index slice (from _ireduce)
-
-    TODO: hasoverflow(), not all dense axes might have an overflow concept,
-    currently it is implicitly assumed they do (as the only dense type is a numeric axis)
-    """
-
-
-class Bin(DenseAxis):
+class Regular(hist.axis.Regular, family="cuda_histogram"):
     """A binned axis with name, label, and binning.
 
     Parameters
@@ -425,295 +396,84 @@ class Bin(DenseAxis):
     Bin boundaries are [lo, hi)
     """
 
-    def __init__(self, name, label, n_or_arr, lo=None, hi=None):
-        super().__init__(name, label)
-        self._lazy_intervals = None
-        if isinstance(n_or_arr, (list, np.ndarray, cupy.ndarray)):
-            self._uniform = False
-            self._bins = cupy.array(n_or_arr, dtype="d")
-            if not all(np.sort(self._bins) == self._bins):
-                raise ValueError("Binning not sorted!")
-            self._lo = self._bins[0]
-            self._hi = self._bins[-1]
-            # to make searchsorted differentiate inf from nan
-            self._bins = cupy.append(self._bins, cupy.inf)
-            self._interval_bins = cupy.r_[-cupy.inf, self._bins, cupy.nan]
-            self._bin_names = np.full(self._interval_bins[:-1].size, None)
-        elif isinstance(n_or_arr, numbers.Integral):
-            if lo is None or hi is None:
-                raise TypeError(
-                    "Interpreting n_or_arr as uniform binning, please specify lo and hi values"
-                )
-            self._uniform = True
-            self._lo = lo
-            self._hi = hi
-            self._bins = n_or_arr
-            self._interval_bins = cupy.r_[
-                -cupy.inf,
-                cupy.linspace(self._lo, self._hi, self._bins + 1),
-                cupy.inf,
-                cupy.nan,
-            ]
-            self._bin_names = np.full(self._interval_bins[:-1].size, None)
-        else:
-            raise TypeError(
-                f"Cannot understand n_or_arr (nbins or binning array) type {n_or_arr!r}"
-            )
+    def __init__(
+        self,
+        bins: int,
+        start: float,
+        stop: float,
+        *,
+        name: str = "",
+        label: str = "",
+        metadata: Any = None,
+        flow: bool = True,
+        underflow: bool | None = None,
+        overflow: bool | None = None,
+        growth: bool = False,
+        circular: bool = False,
+        # pylint: disable-next=redefined-outer-name
+        transform: bha.transform.AxisTransform | None = None,
+        __dict__: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            bins,
+            start,
+            stop,
+            metadata=metadata,
+            underflow=flow if underflow is None else underflow,
+            overflow=flow if overflow is None else overflow,
+            growth=growth,
+            circular=circular,
+            transform=transform,
+            __dict__=__dict__,
+        )
+        self._ax.metadata["name"] = name
+        self.label: str = label
 
-    @property
-    def _intervals(self):
-        if not hasattr(self, "_lazy_intervals") or self._lazy_intervals is None:
-            self._lazy_intervals = [
-                Interval(low, high, bin)
-                for low, high, bin in zip(
-                    self._interval_bins[:-1], self._interval_bins[1:], self._bin_names
-                )
-            ]
-        return self._lazy_intervals
 
-    def __getstate__(self):
-        if hasattr(self, "_lazy_intervals") and self._lazy_intervals is not None:
-            self._bin_names = np.array(
-                [interval.label for interval in self._lazy_intervals]
-            )
-        self.__dict__.pop("_lazy_intervals", None)
-        return self.__dict__
+class Variable(hist.axis.Variable, family="cuda_histogram"):
+    """A binned axis with name, label, and binning.
 
-    def __setstate__(self, d):
-        if "_intervals" in d:  # convert old hists to new serialization format
-            _old_intervals = d.pop("_intervals")
-            interval_bins = [i._lo for i in _old_intervals] + [_old_intervals[-1]._hi]
-            d["_interval_bins"] = cupy.array(interval_bins)
-            d["_bin_names"] = np.array([interval._label for interval in _old_intervals])
-        if "_interval_bins" in d and "_bin_names" not in d:
-            d["_bin_names"] = np.full(d["_interval_bins"][:-1].size, None)
-        self.__dict__ = d
+    Parameters
+    ----------
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
+        n_or_arr : int or list or np.ndarray
+            Integer number of bins, if uniform binning. Otherwise, a list or
+            numpy 1D array of bin boundaries.
+        lo : float, optional
+            lower boundary of bin range, if uniform binning
+        hi : float, optional
+            upper boundary of bin range, if uniform binning
 
-    def index(self, identifier):
-        """Index of a identifier or label
+    This axis will generate frequencies for n+3 bins, special bin indices:
+    ``0 = underflow, n+1 = overflow, n+2 = nanflow``
+    Bin boundaries are [lo, hi)
+    """
 
-        Parameters
-        ----------
-            identifier : float or Interval or np.ndarray
-                The identifier(s) to lookup.  Supports vectorized
-                calls when a numpy 1D array of numbers is passed.
-
-        Returns an integer corresponding to the index in the axis where the histogram would be filled.
-        The integer range includes flow bins: ``0 = underflow, n+1 = overflow, n+2 = nanflow``
-        """
-        isarray = isinstance(identifier, (awkward.Array, cupy.ndarray, np.ndarray))
-        if isarray or isinstance(identifier, numbers.Number):
-            identifier = awkward.to_cupy(identifier)  # cupy.asarray(identifier)
-            if self._uniform:
-                idx = None
-                if isarray:
-                    idx = cupy.zeros_like(identifier)
-                    _clip_bins(float(self._bins), self._lo, self._hi, identifier, idx)
-                else:
-                    idx = np.clip(
-                        np.floor(
-                            (identifier - self._lo)
-                            * float(self._bins)
-                            / (self._hi - self._lo)
-                        )
-                        + 1,
-                        0,
-                        self._bins + 1,
-                    )
-
-                if isinstance(idx, (cupy.ndarray, np.ndarray)):
-                    _replace_nans(
-                        self.size - 1,
-                        idx if idx.dtype.kind == "f" else idx.astype(cupy.float32),
-                    )
-                    idx = idx.astype(int)
-                elif np.isnan(idx):
-                    idx = self.size - 1
-                else:
-                    idx = int(idx)
-                return idx
-            else:
-                return cupy.searchsorted(self._bins, identifier, side="right")
-        elif isinstance(identifier, Interval):
-            if identifier.nan():
-                return self.size - 1
-            for idx, interval in enumerate(self._intervals):
-                if (
-                    interval._lo <= identifier._lo
-                    or cupy.isclose(interval._lo, identifier._lo)
-                ) and (
-                    interval._hi >= identifier._hi
-                    or cupy.isclose(interval._hi, identifier._hi)
-                ):
-                    return idx
-            raise ValueError(
-                f"Axis {self!r} has no interval that fully contains identifier {identifier!r}"
-            )
-        raise TypeError("Request bin indices with a identifier or 1-D array only")
-
-    def __eq__(self, other):
-        if isinstance(other, DenseAxis):
-            if not super().__eq__(other):
-                return False
-            if self._uniform != other._uniform:
-                return False
-            if self._uniform and self._bins != other._bins:
-                return False
-            if not self._uniform and not all(self._bins == other._bins):  # noqa: SIM103
-                return False
-            return True
-        return super().__eq__(other)
-
-    def __getitem__(self, index):
-        return self._intervals[index]
-
-    def _ireduce(self, the_slice):
-        if isinstance(the_slice, numbers.Number):
-            the_slice = slice(the_slice, the_slice)
-        elif isinstance(the_slice, Interval):
-            if the_slice.nan():
-                return slice(-1, None)
-            lo = the_slice._lo if the_slice._lo > -np.inf else None
-            hi = the_slice._hi if the_slice._hi < np.inf else None
-            the_slice = slice(lo, hi)
-        if isinstance(the_slice, slice):
-            blo, bhi = None, None
-            if the_slice.start is not None:
-                if the_slice.start < self._lo:
-                    raise ValueError(
-                        f"Reducing along axis {self!r}: requested start {the_slice.start!r} exceeds bin boundaries (use open slicing, e.g. x[:stop])"
-                    )
-                if self._uniform:
-                    blo_real = (the_slice.start - self._lo) * self._bins / (
-                        self._hi - self._lo
-                    ) + 1
-                    blo = np.clip(np.round(blo_real).astype(int), 0, self._bins + 1)
-                    if abs(blo - blo_real) > 1.0e-14:
-                        warnings.warn(
-                            f"Reducing along axis {self!r}: requested start {the_slice.start!r} between bin boundaries, no interpolation is performed",
-                            RuntimeWarning,
-                        )
-                else:
-                    if the_slice.start not in self._bins:
-                        warnings.warn(
-                            f"Reducing along axis {self!r}: requested start {the_slice.start!r} between bin boundaries, no interpolation is performed",
-                            RuntimeWarning,
-                        )
-                    blo = self.index(the_slice.start)
-            if the_slice.stop is not None:
-                if the_slice.stop > self._hi:
-                    raise ValueError(
-                        f"Reducing along axis {self!r}: requested stop {the_slice.stop!r} exceeds bin boundaries (use open slicing, e.g. x[start:])"
-                    )
-                if self._uniform:
-                    bhi_real = (the_slice.stop - self._lo) * self._bins / (
-                        self._hi - self._lo
-                    ) + 1
-                    bhi = np.clip(np.round(bhi_real).astype(int), 0, self._bins + 1)
-                    if abs(bhi - bhi_real) > 1.0e-14:
-                        warnings.warn(
-                            f"Reducing along axis {self!r}: requested stop {the_slice.stop!r} between bin boundaries, no interpolation is performed",
-                            RuntimeWarning,
-                        )
-                else:
-                    if the_slice.stop not in self._bins:
-                        warnings.warn(
-                            f"Reducing along axis {self!r}: requested stop {the_slice.stop!r} between bin boundaries, no interpolation is performed",
-                            RuntimeWarning,
-                        )
-                    bhi = self.index(the_slice.stop)
-                # Assume null ranges (start==stop) mean we want the bin containing the value
-                if blo is not None and blo == bhi:
-                    bhi += 1
-            if the_slice.step is not None:
-                raise NotImplementedError(
-                    "Step slicing can be interpreted as a rebin factor"
-                )
-            return slice(blo, bhi, the_slice.step)
-        elif isinstance(the_slice, list) and all(
-            isinstance(v, Interval) for v in the_slice
-        ):
-            raise NotImplementedError("Slice histogram from list of intervals")
-        raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
-
-    def reduced(self, islice):
-        """Return a new axis with reduced binning
-
-        The new binning corresponds to the slice made on this axis.
-        Overflow will be taken care of by ``Hist.__getitem__``
-
-        Parameters
-        ----------
-            islice : slice
-                ``islice.start`` and ``islice.stop`` should be None or within ``[1, ax.size() - 1]``
-                This slice is usually as returned from ``Bin._ireduce``
-        """
-        if islice.step is not None:
-            raise NotImplementedError(
-                "Step slicing can be interpreted as a rebin factor"
-            )
-        if islice.start is None and islice.stop is None:
-            return self
-        if self._uniform:
-            lo = self._lo
-            ilo = 0
-            if islice.start is not None:
-                lo += (islice.start - 1) * (self._hi - self._lo) / self._bins
-                ilo = islice.start - 1
-            hi = self._hi
-            ihi = self._bins
-            if islice.stop is not None:
-                hi = self._lo + (islice.stop - 1) * (self._hi - self._lo) / self._bins
-                ihi = islice.stop - 1
-            bins = ihi - ilo
-            # TODO: remove this once satisfied it works
-            rbins = (hi - lo) * self._bins / (self._hi - self._lo)
-            assert abs(bins - rbins) < 1e-14, "%d %f %r" % (bins, rbins, self)
-            return Bin(self._name, self._label, bins, lo, hi)
-        else:
-            lo = None if islice.start is None else islice.start - 1
-            hi = -1 if islice.stop is None else islice.stop
-            bins = self._bins[slice(lo, hi)]
-            return Bin(self._name, self._label, bins)
-
-    @property
-    def size(self):
-        """Number of bins, including overflow (i.e. ``n + 3``)"""
-        if self._uniform:
-            return self._bins + 3
-        # (inf added at constructor)
-        return len(self._bins) + 1
-
-    def edges(self, overflow="none"):
-        """Bin boundaries
-
-        Parameters
-        ----------
-            overflow : str
-                Create overflow and/or underflow bins by adding a bin of same width to each end.
-                See `Hist.sum` description for the allowed values.
-        """
-        if self._uniform:
-            out = cupy.linspace(self._lo, self._hi, self._bins + 1)
-        else:
-            out = self._bins[:-1].copy()
-        out = cupy.r_[
-            2 * out[0] - out[1], out, 2 * out[-1] - out[-2], 3 * out[-1] - 2 * out[-2]
-        ]
-        return out[_overflow_behavior(overflow)]
-
-    def centers(self, overflow="none"):
-        """Bin centers
-
-        Parameters
-        ----------
-            overflow : str
-                Create overflow and/or underflow bins by adding a bin of same width to each end.
-                See `Hist.sum` description for the allowed values.
-        """
-        edges = self.edges(overflow)
-        return (edges[:-1] + edges[1:]) / 2
-
-    def identifiers(self, overflow="none"):
-        """List of `Interval` identifiers"""
-        return self._intervals[_overflow_behavior(overflow)]
+    def __init__(
+        self,
+        edges: Iterable[float],
+        *,
+        name: str = "",
+        label: str = "",
+        metadata: Any = None,
+        flow: bool = True,
+        underflow: bool | None = None,
+        overflow: bool | None = None,
+        growth: bool = False,
+        circular: bool = False,
+        __dict__: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            edges,
+            metadata=metadata,
+            underflow=flow if underflow is None else underflow,
+            overflow=flow if overflow is None else overflow,
+            growth=growth,
+            circular=circular,
+            __dict__=__dict__,
+        )
+        self._ax.metadata["name"] = name
+        self.label: str = label

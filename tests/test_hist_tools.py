@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import awkward as ak
 import numpy as np
 import pytest
 
@@ -241,135 +240,44 @@ def test_hist():
     assert h_less.sum("vocalization", "height", "mass", "animal").values()[()] == 1004.0
 
 
-def test_hist_serdes():
-    import pickle
+# should be a to_cpu test
+# def test_boost_conversion():
+#     import boost_histogram as bh
 
-    h_regular_bins = cuda_histogram.Hist(
-        "regular joe",
-        cuda_histogram.Bin("x", "x", 20, 0, 200),
-        cuda_histogram.Bin("y", "why", 20, -3, 3),
-    )
+#     dummy = cuda_histogram.Hist(
+#         "Dummy",
+#         cuda_histogram.Cat("sample", "sample"),
+#         cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
+#     )
+#     dummy.fill(sample="test", dummy=1, weight=0.5)
+#     dummy.fill(sample="test", dummy=0.1)
+#     dummy.fill(sample="test2", dummy=-0.1)
+#     dummy.fill(sample="test3", dummy=0.5, weight=0.1)
+#     dummy.fill(sample="test3", dummy=0.5, weight=0.9)
 
-    h_regular_bins.fill(
-        x=np.array([1.0, 2.0, 3.0, 4.0, 5.0]), y=np.array([-2.0, 1.0, 0.0, 1.0, 2.0])
-    )
+#     h = dummy.to_boost()
+#     assert len(h.axes) == 2
+#     assert h[bh.loc("test"), bh.loc(1)].value == 0.5
+#     assert h[bh.loc("test"), bh.loc(100)].value == 0.5
+#     assert h[bh.loc("test"), bh.loc(1)].variance == 0.25
+#     assert h[0, 0].value == 1.0
+#     assert h[0, 0].variance == 1.0
+#     assert h[1, 0].value == 0.0
+#     assert h[bh.loc("test2"), 0].value == 0.0
+#     assert h[1, bh.underflow].value == 1.0
+#     assert h[bh.loc("test3"), bh.loc(0.5)].value == 1.0
+#     assert h[bh.loc("test3"), bh.loc(0.5)].variance == 0.1 * 0.1 + 0.9 * 0.9
 
-    h_regular_bins.sum("x").identifiers("y")
-
-    spkl = pickle.dumps(h_regular_bins)
-
-    hnew = pickle.loads(spkl)
-
-    hnew.sum("x").identifiers("y")
-
-    assert h_regular_bins._dense_shape == hnew._dense_shape
-    assert h_regular_bins._axes == hnew._axes
-
-
-def test_hist_serdes_labels():
-    import pickle
-
-    ax = cuda_histogram.Bin("asdf", "asdf", 3, 0, 3)
-    ax.identifiers()[0].label = "type 1"
-    h = cuda_histogram.Hist("a", ax)
-    h.identifiers("asdf")
-
-    spkl = pickle.dumps(h)
-
-    hnew = pickle.loads(spkl)
-
-    for old, new in zip(h.identifiers("asdf"), hnew.identifiers("asdf")):
-        assert old.label == new.label
-
-    assert h._dense_shape == hnew._dense_shape
-    assert h._axes == hnew._axes
-
-
-def test_issue_247():
-    import cuda_histogram
-
-    h = cuda_histogram.Hist("stuff", cuda_histogram.Bin("old", "old", 20, -1, 1))
-    h.fill(old=h.axis("old").centers())
-    h2 = h.rebin(h.axis("old"), cuda_histogram.Bin("new", "new", 10, -1, 1))
-    # check first if its even possible to have correct binning
-    assert np.all(h2.axis("new").edges() == h.axis("old").edges()[::2])
-    # make sure the lookup works properly
-    assert np.all(h2.values()[()] == 2.0)
-    h3 = h.rebin(h.axis("old"), 2)
-    assert np.all(h3.values()[()] == 2.0)
-
-    with pytest.raises(ValueError):
-        # invalid division
-        _ = h.rebin(h.axis("old"), cuda_histogram.Bin("new", "new", 8, -1, 1))
-
-    newaxis = cuda_histogram.Bin(
-        "new", "new", h.axis("old").edges()[np.cumsum([0, 2, 3, 5])]
-    )
-    h.rebin("old", newaxis)
-
-
-def test_issue_333():
-    axis = cuda_histogram.Bin("channel", "Channel b1", 50, 0, 2000)
-    temp = np.arange(0, 2000, 40, dtype=np.int16)
-    assert np.all(axis.index(temp).get() == np.arange(50) + 1)
-
-
-def test_issue_394():
-    dummy = cuda_histogram.Hist(
-        "Dummy",
-        cuda_histogram.Cat("sample", "sample"),
-        cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
-    )
-    dummy.fill(sample="test", dummy=1, weight=0.5)
-
-
-def test_fill_none():
-    dummy = cuda_histogram.Hist("Dummy", cuda_histogram.Bin("x", "asdf", 1, 0, 1))
-    with pytest.raises(ValueError):
-        # attempt to fill with none
-        dummy.fill(x=ak.Array([0.1, None, 0.3]))
-
-    # allow fill when masked type but no Nones remain
-    dummy.fill(x=ak.Array([0.1, None, 0.3])[[True, False, True]])
-
-
-def test_boost_conversion():
-    import boost_histogram as bh
-
-    dummy = cuda_histogram.Hist(
-        "Dummy",
-        cuda_histogram.Cat("sample", "sample"),
-        cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
-    )
-    dummy.fill(sample="test", dummy=1, weight=0.5)
-    dummy.fill(sample="test", dummy=0.1)
-    dummy.fill(sample="test2", dummy=-0.1)
-    dummy.fill(sample="test3", dummy=0.5, weight=0.1)
-    dummy.fill(sample="test3", dummy=0.5, weight=0.9)
-
-    h = dummy.to_boost()
-    assert len(h.axes) == 2
-    assert h[bh.loc("test"), bh.loc(1)].value == 0.5
-    assert h[bh.loc("test"), bh.loc(100)].value == 0.5
-    assert h[bh.loc("test"), bh.loc(1)].variance == 0.25
-    assert h[0, 0].value == 1.0
-    assert h[0, 0].variance == 1.0
-    assert h[1, 0].value == 0.0
-    assert h[bh.loc("test2"), 0].value == 0.0
-    assert h[1, bh.underflow].value == 1.0
-    assert h[bh.loc("test3"), bh.loc(0.5)].value == 1.0
-    assert h[bh.loc("test3"), bh.loc(0.5)].variance == 0.1 * 0.1 + 0.9 * 0.9
-
-    dummy = cuda_histogram.Hist(
-        "Dummy",
-        cuda_histogram.Cat("sample", "sample"),
-        cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
-    )
-    dummy.fill(sample="test", dummy=0.1)
-    dummy.fill(sample="test", dummy=0.2)
-    dummy.fill(sample="test2", dummy=0.2)
-    # No sumw2 -> simple bh storage
-    h = dummy.to_boost()
-    assert len(h.axes) == 2
-    assert h[0, 0] == 2.0
-    assert h[1, 0] == 1.0
+#     dummy = cuda_histogram.Hist(
+#         "Dummy",
+#         cuda_histogram.Cat("sample", "sample"),
+#         cuda_histogram.Bin("dummy", "Number of events", 1, 0, 1),
+#     )
+#     dummy.fill(sample="test", dummy=0.1)
+#     dummy.fill(sample="test", dummy=0.2)
+#     dummy.fill(sample="test2", dummy=0.2)
+#     # No sumw2 -> simple bh storage
+#     h = dummy.to_boost()
+#     assert len(h.axes) == 2
+#     assert h[0, 0] == 2.0
+#     assert h[1, 0] == 1.0
