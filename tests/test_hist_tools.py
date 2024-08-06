@@ -34,8 +34,8 @@ def test_hist():
 
     h_regular_bins = cuda_histogram.Hist(
         "regular joe",
-        cuda_histogram.Bin("x", "x", 20, 0, 200),
-        cuda_histogram.Bin("y", "why", 20, -3, 3),
+        cuda_histogram.axis.Bin("x", "x", 20, 0, 200),
+        cuda_histogram.axis.Bin("y", "why", 20, -3, 3),
     )
     h_regular_bins.fill(x=test_pt, y=test_eta)
     nentries = np.sum(counts)
@@ -62,8 +62,8 @@ def test_hist():
     assert h_reduced.integrate("x", slice(20, 30)).values()[()][2] == count_some_bin + 1
     assert h_reduced.integrate("y", slice(0, 0.3)).values()[()][1] == count_some_bin + 1
 
-    animal = cuda_histogram.Cat("animal", "type of animal")
-    vocalization = cuda_histogram.Cat(
+    animal = cuda_histogram.axis.Cat("animal", "type of animal")
+    vocalization = cuda_histogram.axis.Cat(
         "vocalization", "onomatopoiea is that how you spell it?"
     )
     h_cat_bins = cuda_histogram.Hist("I like cats", animal, vocalization)
@@ -79,14 +79,14 @@ def test_hist():
         ("dog",)
     ] == (101.0, 10001.0)
 
-    height = cuda_histogram.Bin("height", "height [m]", 10, 0, 5)
+    height = cuda_histogram.axis.Bin("height", "height [m]", 10, 0, 5)
     h_mascots_1 = cuda_histogram.Hist(
         "fermi mascot showdown",
         animal,
         vocalization,
         height,
         # weight is a reserved keyword
-        cuda_histogram.Bin(
+        cuda_histogram.axis.Bin(
             "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
         ),
     )
@@ -98,7 +98,7 @@ def test_hist():
             vocalization,
             height,
             # weight is a reserved keyword
-            cuda_histogram.Bin(
+            cuda_histogram.axis.Bin(
                 "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
             ),
         ),
@@ -110,7 +110,7 @@ def test_hist():
             vocalization,
             height,
             # weight is a reserved keyword
-            cuda_histogram.Bin(
+            cuda_histogram.axis.Bin(
                 "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
             ),
         ],
@@ -124,7 +124,7 @@ def test_hist():
             vocalization,
             height,
             # weight is a reserved keyword
-            cuda_histogram.Bin(
+            cuda_histogram.axis.Bin(
                 "mass", "weight (g=9.81m/s**2) [kg]", np.power(10.0, np.arange(5) - 1)
             ),
             axes=[
@@ -132,7 +132,7 @@ def test_hist():
                 vocalization,
                 height,
                 # weight is a reserved keyword
-                cuda_histogram.Bin(
+                cuda_histogram.axis.Bin(
                     "mass",
                     "weight (g=9.81m/s**2) [kg]",
                     np.power(10.0, np.arange(5) - 1),
@@ -187,7 +187,7 @@ def test_hist():
         == 1040.0
     )
 
-    species_class = cuda_histogram.Cat(
+    species_class = cuda_histogram.axis.Cat(
         "species_class", "where the subphylum is vertibrates"
     )
     classes = {
@@ -223,7 +223,9 @@ def test_hist():
     assert h_species.axis("height") is height
     assert h_species.integrate("vocalization", "h*").axis("height") is height
 
-    tall_class = cuda_histogram.Cat("tall_class", "species class (species above 1m)")
+    tall_class = cuda_histogram.axis.Cat(
+        "tall_class", "species class (species above 1m)"
+    )
     mapping = {
         "birds": (["goose", "crane"], slice(1.0, None)),
         "mammals": (["bison", "fox"], slice(1.0, None)),
