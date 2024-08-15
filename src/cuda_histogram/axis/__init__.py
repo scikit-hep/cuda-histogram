@@ -4,13 +4,13 @@ import functools
 import numbers
 import re
 import warnings
+from typing import Iterable
 
 import awkward
 import cupy
 import numpy as np
 
 __all__: list[str] = [
-    "Bin",
     "Regular",
     "Variable",
     "Cat",
@@ -32,21 +32,11 @@ _clip_bins = cupy.ElementwiseKernel(
 )
 
 
-def _overflow_behavior(overflow):
-    if overflow == "none":
+def _overflow_behavior(overflow: bool):
+    if not overflow:
         return slice(1, -2)
-    elif overflow == "under":
-        return slice(None, -2)
-    elif overflow == "over":
-        return slice(1, -1)
-    elif overflow == "all":
-        return slice(None, -1)
-    elif overflow == "allnan":
-        return slice(None)
-    elif overflow == "justnan":
-        return slice(-1, None)
     else:
-        raise ValueError(f"Unrecognized overflow behavior: {overflow}")
+        return slice(None, None)
 
 
 @functools.total_ordering
@@ -397,9 +387,6 @@ class DenseAxis(Axis):
         **_ireduce(slice)** - return a slice or list of indices, input slice to be interpred as values
 
         **reduced(islice)** - return a new axis with binning corresponding to the index slice (from _ireduce)
-
-    TODO: hasoverflow(), not all dense axes might have an overflow concept,
-    currently it is implicitly assumed they do (as the only dense type is a numeric axis)
     """
 
 
@@ -408,10 +395,6 @@ class Bin(DenseAxis):
 
     Parameters
     ----------
-        name : str
-            is used as a keyword in histogram filling, immutable
-        label : str
-            describes the meaning of the axis, can be changed
         n_or_arr : int or list or np.ndarray
             Integer number of bins, if uniform binning. Otherwise, a list or
             numpy 1D array of bin boundaries.
@@ -419,14 +402,17 @@ class Bin(DenseAxis):
             lower boundary of bin range, if uniform binning
         hi : float, optional
             upper boundary of bin range, if uniform binning
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
 
     This axis will generate frequencies for n+3 bins, special bin indices:
     ``0 = underflow, n+1 = overflow, n+2 = nanflow``
     Bin boundaries are [lo, hi)
     """
 
-    def __init__(self, name, label, n_or_arr, lo=None, hi=None):
-        super().__init__(name, label)
+    def __init__(self, n_or_arr, lo=None, hi=None, *, name="", label=""):
         self._lazy_intervals = None
         if isinstance(n_or_arr, (list, np.ndarray, cupy.ndarray)):
             self._uniform = False
@@ -440,10 +426,6 @@ class Bin(DenseAxis):
             self._interval_bins = cupy.r_[-cupy.inf, self._bins, cupy.nan]
             self._bin_names = np.full(self._interval_bins[:-1].size, None)
         elif isinstance(n_or_arr, numbers.Integral):
-            if lo is None or hi is None:
-                raise TypeError(
-                    "Interpreting n_or_arr as uniform binning, please specify lo and hi values"
-                )
             self._uniform = True
             self._lo = lo
             self._hi = hi
@@ -455,10 +437,16 @@ class Bin(DenseAxis):
                 cupy.nan,
             ]
             self._bin_names = np.full(self._interval_bins[:-1].size, None)
-        else:
-            raise TypeError(
-                f"Cannot understand n_or_arr (nbins or binning array) type {n_or_arr!r}"
-            )
+        self._label = label
+        self._name = name
+
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        return (
+            f"{class_name}({self._bins[:-1]})"
+            if not self._uniform
+            else f"{class_name}{self._bins, self._lo, self._hi}"
+        )
 
     @property
     def _intervals(self):
@@ -480,11 +468,6 @@ class Bin(DenseAxis):
         return self.__dict__
 
     def __setstate__(self, d):
-        if "_intervals" in d:  # convert old hists to new serialization format
-            _old_intervals = d.pop("_intervals")
-            interval_bins = [i._lo for i in _old_intervals] + [_old_intervals[-1]._hi]
-            d["_interval_bins"] = cupy.array(interval_bins)
-            d["_bin_names"] = np.array([interval._label for interval in _old_intervals])
         if "_interval_bins" in d and "_bin_names" not in d:
             d["_bin_names"] = np.full(d["_interval_bins"][:-1].size, None)
         self.__dict__ = d
@@ -501,7 +484,9 @@ class Bin(DenseAxis):
         Returns an integer corresponding to the index in the axis where the histogram would be filled.
         The integer range includes flow bins: ``0 = underflow, n+1 = overflow, n+2 = nanflow``
         """
-        isarray = isinstance(identifier, (awkward.Array, cupy.ndarray, np.ndarray))
+        isarray = isinstance(
+            identifier, (awkward.Array, cupy.ndarray, np.ndarray, list)
+        )
         if isarray or isinstance(identifier, numbers.Number):
             identifier = awkward.to_cupy(identifier)  # cupy.asarray(identifier)
             if self._uniform:
@@ -638,10 +623,8 @@ class Bin(DenseAxis):
 
     def reduced(self, islice):
         """Return a new axis with reduced binning
-
         The new binning corresponds to the slice made on this axis.
         Overflow will be taken care of by ``Hist.__getitem__``
-
         Parameters
         ----------
             islice : slice
@@ -669,22 +652,23 @@ class Bin(DenseAxis):
             # TODO: remove this once satisfied it works
             rbins = (hi - lo) * self._bins / (self._hi - self._lo)
             assert abs(bins - rbins) < 1e-14, "%d %f %r" % (bins, rbins, self)
-            return Bin(self._name, self._label, bins, lo, hi)
+            return Regular(bins, lo, hi, name=self._name, label=self._label)
         else:
             lo = None if islice.start is None else islice.start - 1
             hi = -1 if islice.stop is None else islice.stop
             bins = self._bins[slice(lo, hi)]
-            return Bin(self._name, self._label, bins)
+            return Variable(bins, name=self._name, label=self._label)
 
     @property
     def size(self):
-        """Number of bins, including overflow (i.e. ``n + 3``)"""
-        if self._uniform:
-            return self._bins + 3
-        # (inf added at constructor)
-        return len(self._bins) + 1
+        """Number of bins"""
+        return (
+            self._bins
+            if isinstance(self._bins, (int, np.integer, cupy.integer))
+            else len(self._bins)
+        )
 
-    def edges(self, overflow="none"):
+    def edges(self, flow=False):
         """Bin boundaries
 
         Parameters
@@ -700,9 +684,9 @@ class Bin(DenseAxis):
         out = cupy.r_[
             2 * out[0] - out[1], out, 2 * out[-1] - out[-2], 3 * out[-1] - 2 * out[-2]
         ]
-        return out[_overflow_behavior(overflow)]
+        return out[_overflow_behavior(flow)]
 
-    def centers(self, overflow="none"):
+    def centers(self, flow=False):
         """Bin centers
 
         Parameters
@@ -711,9 +695,81 @@ class Bin(DenseAxis):
                 Create overflow and/or underflow bins by adding a bin of same width to each end.
                 See `Hist.sum` description for the allowed values.
         """
-        edges = self.edges(overflow)
+        edges = self.edges(flow)
         return (edges[:-1] + edges[1:]) / 2
 
-    def identifiers(self, overflow="none"):
+    def identifiers(self, flow=False):
         """List of `Interval` identifiers"""
-        return self._intervals[_overflow_behavior(overflow)]
+        return self._intervals[_overflow_behavior(flow)]
+
+
+class Regular(Bin):
+    """A binned axis with name, label, and binning.
+
+    Parameters
+    ----------
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
+        n_or_arr : int or list or np.ndarray
+            Integer number of bins, if uniform binning. Otherwise, a list or
+            numpy 1D array of bin boundaries.
+        lo : float, optional
+            lower boundary of bin range, if uniform binning
+        hi : float, optional
+            upper boundary of bin range, if uniform binning
+
+    This axis will generate frequencies for n+3 bins, special bin indices:
+    ``0 = underflow, n+1 = overflow, n+2 = nanflow``
+    Bin boundaries are [lo, hi)
+    """
+
+    def __init__(
+        self,
+        bins: int,
+        start: float,
+        stop: float,
+        *,
+        name: str = "",
+        label: str = "",
+    ) -> None:
+        super().__init__(
+            bins,
+            start,
+            stop,
+            name=name,
+            label=label,
+        )
+
+
+class Variable(Bin):
+    """A binned axis with name, label, and binning.
+
+    Parameters
+    ----------
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
+        n_or_arr : int or list or np.ndarray
+            Integer number of bins, if uniform binning. Otherwise, a list or
+            numpy 1D array of bin boundaries.
+        lo : float, optional
+            lower boundary of bin range, if uniform binning
+        hi : float, optional
+            upper boundary of bin range, if uniform binning
+
+    This axis will generate frequencies for n+3 bins, special bin indices:
+    ``0 = underflow, n+1 = overflow, n+2 = nanflow``
+    Bin boundaries are [lo, hi)
+    """
+
+    def __init__(
+        self,
+        edges: Iterable[float],
+        *,
+        name: str = "",
+        label: str = "",
+    ) -> None:
+        super().__init__(edges, name=name, label=label)
