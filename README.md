@@ -106,7 +106,7 @@ h.fill(cp.random.normal(size=1_000_000), cp.random.normal(size=1_000_000))  # se
 
 Differences in API (from boost-histogram) -
 
-- `underflow` is indexed as `0` and not `1`
+- `underflow` is indexed as `0` and not `-1`
 - `ax[...]` will return a `cuda_histogram.Interval` object
 - No interpolation is performed
 - `Hist` indices should be in the range of bin edges, instead of integers
