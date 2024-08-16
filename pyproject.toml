@@ -9,14 +9,15 @@ maintainers = [
   { name = "The Scikit-HEP admins", email = "scikit-hep-admins@googlegroups.com" },
 ]
 authors = [
-  { name = "Lindsey Gray, Saransh Chopra", email = "lagray@fnal.gov" },
+  { name = "Lindsey Gray", email = "lagray@fnal.gov" },
+  { name = "Saransh Chopra", email = "saransh0701@gmail.com" },
 ]
 description = "Histogramming tools on CUDA."
 readme = "README.md"
 license.file = "LICENSE"
 requires-python = ">=3.8"
 classifiers = [
-  "Development Status :: 1 - Planning",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: BSD License",
@@ -24,6 +25,7 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",

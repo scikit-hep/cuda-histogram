@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import functools
 import numbers
-import re
 import warnings
+from typing import Iterable
 
 import awkward
 import cupy
 import numpy as np
 
 __all__: list[str] = [
-    "Bin",
     "Regular",
     "Variable",
-    "Cat",
+    # "Cat",
     "Interval",
-    "StringBin",
+    # "StringBin",
+    "Bin",
 ]
 
 _replace_nans = cupy.ElementwiseKernel("T v", "T x", "x = isnan(x)?v:x", "replace_nans")
@@ -32,21 +32,11 @@ _clip_bins = cupy.ElementwiseKernel(
 )
 
 
-def _overflow_behavior(overflow):
-    if overflow == "none":
+def _overflow_behavior(overflow: bool):
+    if not overflow:
         return slice(1, -2)
-    elif overflow == "under":
-        return slice(None, -2)
-    elif overflow == "over":
-        return slice(1, -1)
-    elif overflow == "all":
-        return slice(None, -1)
-    elif overflow == "allnan":
-        return slice(None)
-    elif overflow == "justnan":
-        return slice(-1, None)
     else:
-        raise ValueError(f"Unrecognized overflow behavior: {overflow}")
+        return slice(None, None)
 
 
 @functools.total_ordering
@@ -137,65 +127,66 @@ class Interval:
         self._label = lbl
 
 
-@functools.total_ordering
-class StringBin:
-    """A string used to fill a sparse axis
+# TODO: cleanup logic for sparse axis
+# @functools.total_ordering
+# class StringBin:
+#     """A string used to fill a sparse axis
 
-    Totally ordered, lexicographically by name.
+#     Totally ordered, lexicographically by name.
 
-    Parameters
-    ----------
-        name : str
-            Name of the bin, as used in `Hist.fill` calls
-        label : str
-            The `str` representation of this bin can be overridden by
-            a custom label.
-    """
+#     Parameters
+#     ----------
+#         name : str
+#             Name of the bin, as used in `Hist.fill` calls
+#         label : str
+#             The `str` representation of this bin can be overridden by
+#             a custom label.
+#     """
 
-    def __init__(self, name, label=None):
-        if not isinstance(name, str):
-            raise TypeError(
-                f"StringBin only supports string categories, received a {name!r}"
-            )
-        elif "*" in name:
-            raise ValueError(
-                "StringBin does not support character '*' as it conflicts with wildcard mapping."
-            )
-        self._name = name
-        self._label = label
+#     def __init__(self, name, label=None):
+#         if not isinstance(name, str):
+#             raise TypeError(
+#                 f"StringBin only supports string categories, received a {name!r}"
+#             )
+#         elif "*" in name:
+#             raise ValueError(
+#                 "StringBin does not support character '*' as it conflicts with wildcard mapping."
+#             )
+#         self._name = name
+#         self._label = label
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__} ({self.name}) instance at 0x{id(self):0x}>"
+#     def __repr__(self):
+#         return f"<{self.__class__.__name__} ({self.name}) instance at 0x{id(self):0x}>"
 
-    def __str__(self):
-        if self._label is not None:
-            return self._label
-        return self._name
+#     def __str__(self):
+#         if self._label is not None:
+#             return self._label
+#         return self._name
 
-    def __hash__(self):
-        return hash(self._name)
+#     def __hash__(self):
+#         return hash(self._name)
 
-    def __lt__(self, other):
-        return self._name < other._name
+#     def __lt__(self, other):
+#         return self._name < other._name
 
-    def __eq__(self, other):
-        if isinstance(other, StringBin):
-            return self._name == other._name
-        return False
+#     def __eq__(self, other):
+#         if isinstance(other, StringBin):
+#             return self._name == other._name
+#         return False
 
-    @property
-    def name(self):
-        """Name of this bin, *Immutable*"""
-        return self._name
+#     @property
+#     def name(self):
+#         """Name of this bin, *Immutable*"""
+#         return self._name
 
-    @property
-    def label(self):
-        """Label of this bin, mutable"""
-        return self._label
+#     @property
+#     def label(self):
+#         """Label of this bin, mutable"""
+#         return self._label
 
-    @label.setter
-    def label(self, lbl):
-        self._label = lbl
+#     @label.setter
+#     def label(self, lbl):
+#         self._label = lbl
 
 
 class Axis:
@@ -205,10 +196,6 @@ class Axis:
     """
 
     def __init__(self, name, label):
-        if name == "weight":
-            raise ValueError(
-                "Cannot create axis: 'weight' is a reserved keyword for Hist.fill()"
-            )
         self._name = name
         self._label = label
 
@@ -260,127 +247,128 @@ class SparseAxis(Axis):
     """
 
 
-class Cat(SparseAxis):
-    """A category axis with name and label
+# TODO: cleanup logic for sparse axis
+# class Cat(SparseAxis):
+#     """A category axis with name and label
 
-    Parameters
-    ----------
-        name : str
-            is used as a keyword in histogram filling, immutable
-        label : str
-            describes the meaning of the axis, can be changed
-        sorting : {'identifier', 'placement', 'integral'}, optional
-            Axis sorting when listing identifiers.
+#     Parameters
+#     ----------
+#         name : str
+#             is used as a keyword in histogram filling, immutable
+#         label : str
+#             describes the meaning of the axis, can be changed
+#         sorting : {'identifier', 'placement', 'integral'}, optional
+#             Axis sorting when listing identifiers.
 
-    The number of categories is arbitrary, and can be filled sparsely
-    Identifiers are strings
-    """
+#     The number of categories is arbitrary, and can be filled sparsely
+#     Identifiers are strings
+#     """
 
-    def __init__(self, name, label, sorting="identifier"):
-        super().__init__(name, label)
-        # In all cases key == value.name
-        self._bins = {}
-        self._sorting = sorting
-        self._sorted = []
+#     def __init__(self, name, label, sorting="identifier"):
+#         super().__init__(name, label)
+#         # In all cases key == value.name
+#         self._bins = {}
+#         self._sorting = sorting
+#         self._sorted = []
 
-    def index(self, identifier):
-        """Index of a identifier or label
+#     def index(self, identifier):
+#         """Index of a identifier or label
 
-        Parameters
-        ----------
-            identifier : str or StringBin
-                The identifier to lookup
+#         Parameters
+#         ----------
+#             identifier : str or StringBin
+#                 The identifier to lookup
 
-        Returns a `StringBin` corresponding to the given argument (trivial in the case
-        where a `StringBin` was passed) and saves a reference internally in the case where
-        the identifier was not seen before by this axis.
-        """
-        if isinstance(identifier, StringBin):
-            index = identifier
-        else:
-            index = StringBin(identifier)
-        if index.name not in self._bins:
-            self._bins[index.name] = index
-            self._sorted.append(index.name)
-            if self._sorting == "identifier":
-                self._sorted.sort()
-        return self._bins[index.name]
+#         Returns a `StringBin` corresponding to the given argument (trivial in the case
+#         where a `StringBin` was passed) and saves a reference internally in the case where
+#         the identifier was not seen before by this axis.
+#         """
+#         if isinstance(identifier, StringBin):
+#             index = identifier
+#         else:
+#             index = StringBin(identifier)
+#         if index.name not in self._bins:
+#             self._bins[index.name] = index
+#             self._sorted.append(index.name)
+#             if self._sorting == "identifier":
+#                 self._sorted.sort()
+#         return self._bins[index.name]
 
-    def __eq__(self, other):
-        # Sparse, so as long as name is the same
-        return super().__eq__(other)
+#     def __eq__(self, other):
+#         # Sparse, so as long as name is the same
+#         return super().__eq__(other)
 
-    def __getitem__(self, index):
-        if not isinstance(index, StringBin):
-            raise TypeError(f"Expected a StringBin object, got: {index!r}")
-        identifier = index.name
-        if identifier not in self._bins:
-            raise KeyError("No identifier %r in this Category axis")
-        return identifier
+#     def __getitem__(self, index):
+#         if not isinstance(index, StringBin):
+#             raise TypeError(f"Expected a StringBin object, got: {index!r}")
+#         identifier = index.name
+#         if identifier not in self._bins:
+#             raise KeyError("No identifier %r in this Category axis")
+#         return identifier
 
-    def _ireduce(self, the_slice):
-        out = None
-        if isinstance(the_slice, StringBin):
-            out = [the_slice.name]
-        elif isinstance(the_slice, re.Pattern):
-            out = [k for k in self._sorted if the_slice.match(k)]
-        elif isinstance(the_slice, str):
-            pattern = "^" + re.escape(the_slice).replace(r"\*", ".*") + "$"
-            m = re.compile(pattern)
-            out = [k for k in self._sorted if m.match(k)]
-        elif isinstance(the_slice, list):
-            if not all(k in self._sorted for k in the_slice):
-                warnings.warn(
-                    f"Not all requested indices present in {self!r}", RuntimeWarning
-                )
-            out = [k for k in self._sorted if k in the_slice]
-        elif isinstance(the_slice, slice):
-            if the_slice.step is not None:
-                raise IndexError("Not sure how to use slice step for categories...")
-            start, stop = 0, len(self._sorted)
-            if isinstance(the_slice.start, str):
-                start = self._sorted.index(the_slice.start)
-            else:
-                start = the_slice.start
-            if isinstance(the_slice.stop, str):
-                stop = self._sorted.index(the_slice.stop)
-            else:
-                stop = the_slice.stop
-            out = self._sorted[start:stop]
-        else:
-            raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
-        return [self._bins[k] for k in out]
+#     def _ireduce(self, the_slice):
+#         out = None
+#         if isinstance(the_slice, StringBin):
+#             out = [the_slice.name]
+#         elif isinstance(the_slice, re.Pattern):
+#             out = [k for k in self._sorted if the_slice.match(k)]
+#         elif isinstance(the_slice, str):
+#             pattern = "^" + re.escape(the_slice).replace(r"\*", ".*") + "$"
+#             m = re.compile(pattern)
+#             out = [k for k in self._sorted if m.match(k)]
+#         elif isinstance(the_slice, list):
+#             if not all(k in self._sorted for k in the_slice):
+#                 warnings.warn(
+#                     f"Not all requested indices present in {self!r}", RuntimeWarning
+#                 )
+#             out = [k for k in self._sorted if k in the_slice]
+#         elif isinstance(the_slice, slice):
+#             if the_slice.step is not None:
+#                 raise IndexError("Not sure how to use slice step for categories...")
+#             start, stop = 0, len(self._sorted)
+#             if isinstance(the_slice.start, str):
+#                 start = self._sorted.index(the_slice.start)
+#             else:
+#                 start = the_slice.start
+#             if isinstance(the_slice.stop, str):
+#                 stop = self._sorted.index(the_slice.stop)
+#             else:
+#                 stop = the_slice.stop
+#             out = self._sorted[start:stop]
+#         else:
+#             raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
+#         return [self._bins[k] for k in out]
 
-    @property
-    def size(self):
-        """Number of bins"""
-        return len(self._bins)
+#     @property
+#     def size(self):
+#         """Number of bins"""
+#         return len(self._bins)
 
-    @property
-    def sorting(self):
-        """Sorting definition to adhere to
+#     @property
+#     def sorting(self):
+#         """Sorting definition to adhere to
 
-        See `Cat` constructor for possible values
-        """
-        return self._sorting
+#         See `Cat` constructor for possible values
+#         """
+#         return self._sorting
 
-    @sorting.setter
-    def sorting(self, newsorting):
-        if newsorting == "placement":
-            # not much we can do about already inserted values
-            pass
-        elif newsorting == "identifier":
-            self._sorted.sort()
-        elif newsorting == "integral":
-            # this will be checked in any Hist.identifiers() call accessing this axis
-            pass
-        else:
-            raise AttributeError(f"Invalid axis sorting type: {newsorting}")
-        self._sorting = newsorting
+#     @sorting.setter
+#     def sorting(self, newsorting):
+#         if newsorting == "placement":
+#             # not much we can do about already inserted values
+#             pass
+#         elif newsorting == "identifier":
+#             self._sorted.sort()
+#         elif newsorting == "integral":
+#             # this will be checked in any Hist.identifiers() call accessing this axis
+#             pass
+#         else:
+#             raise AttributeError(f"Invalid axis sorting type: {newsorting}")
+#         self._sorting = newsorting
 
-    def identifiers(self):
-        """List of `StringBin` identifiers"""
-        return [self._bins[k] for k in self._sorted]
+#     def identifiers(self):
+#         """List of `StringBin` identifiers"""
+#         return [self._bins[k] for k in self._sorted]
 
 
 class DenseAxis(Axis):
@@ -397,21 +385,16 @@ class DenseAxis(Axis):
         **_ireduce(slice)** - return a slice or list of indices, input slice to be interpred as values
 
         **reduced(islice)** - return a new axis with binning corresponding to the index slice (from _ireduce)
-
-    TODO: hasoverflow(), not all dense axes might have an overflow concept,
-    currently it is implicitly assumed they do (as the only dense type is a numeric axis)
     """
 
 
 class Bin(DenseAxis):
-    """A binned axis with name, label, and binning.
+    """Super class for dense axes.
+
+    A binned axis with name, label, and binning.
 
     Parameters
     ----------
-        name : str
-            is used as a keyword in histogram filling, immutable
-        label : str
-            describes the meaning of the axis, can be changed
         n_or_arr : int or list or np.ndarray
             Integer number of bins, if uniform binning. Otherwise, a list or
             numpy 1D array of bin boundaries.
@@ -419,14 +402,17 @@ class Bin(DenseAxis):
             lower boundary of bin range, if uniform binning
         hi : float, optional
             upper boundary of bin range, if uniform binning
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
 
     This axis will generate frequencies for n+3 bins, special bin indices:
     ``0 = underflow, n+1 = overflow, n+2 = nanflow``
     Bin boundaries are [lo, hi)
     """
 
-    def __init__(self, name, label, n_or_arr, lo=None, hi=None):
-        super().__init__(name, label)
+    def __init__(self, n_or_arr, lo=None, hi=None, *, name="", label=""):
         self._lazy_intervals = None
         if isinstance(n_or_arr, (list, np.ndarray, cupy.ndarray)):
             self._uniform = False
@@ -440,10 +426,6 @@ class Bin(DenseAxis):
             self._interval_bins = cupy.r_[-cupy.inf, self._bins, cupy.nan]
             self._bin_names = np.full(self._interval_bins[:-1].size, None)
         elif isinstance(n_or_arr, numbers.Integral):
-            if lo is None or hi is None:
-                raise TypeError(
-                    "Interpreting n_or_arr as uniform binning, please specify lo and hi values"
-                )
             self._uniform = True
             self._lo = lo
             self._hi = hi
@@ -455,10 +437,16 @@ class Bin(DenseAxis):
                 cupy.nan,
             ]
             self._bin_names = np.full(self._interval_bins[:-1].size, None)
-        else:
-            raise TypeError(
-                f"Cannot understand n_or_arr (nbins or binning array) type {n_or_arr!r}"
-            )
+        self._label = label
+        self._name = name
+
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        return (
+            f"{class_name}({self._bins[:-1]})"
+            if not self._uniform
+            else f"{class_name}{self._bins, self._lo, self._hi}"
+        )
 
     @property
     def _intervals(self):
@@ -480,11 +468,6 @@ class Bin(DenseAxis):
         return self.__dict__
 
     def __setstate__(self, d):
-        if "_intervals" in d:  # convert old hists to new serialization format
-            _old_intervals = d.pop("_intervals")
-            interval_bins = [i._lo for i in _old_intervals] + [_old_intervals[-1]._hi]
-            d["_interval_bins"] = cupy.array(interval_bins)
-            d["_bin_names"] = np.array([interval._label for interval in _old_intervals])
         if "_interval_bins" in d and "_bin_names" not in d:
             d["_bin_names"] = np.full(d["_interval_bins"][:-1].size, None)
         self.__dict__ = d
@@ -501,7 +484,9 @@ class Bin(DenseAxis):
         Returns an integer corresponding to the index in the axis where the histogram would be filled.
         The integer range includes flow bins: ``0 = underflow, n+1 = overflow, n+2 = nanflow``
         """
-        isarray = isinstance(identifier, (awkward.Array, cupy.ndarray, np.ndarray))
+        isarray = isinstance(
+            identifier, (awkward.Array, cupy.ndarray, np.ndarray, list)
+        )
         if isarray or isinstance(identifier, numbers.Number):
             identifier = awkward.to_cupy(identifier)  # cupy.asarray(identifier)
             if self._uniform:
@@ -587,7 +572,9 @@ class Bin(DenseAxis):
                     blo_real = (the_slice.start - self._lo) * self._bins / (
                         self._hi - self._lo
                     ) + 1
-                    blo = np.clip(np.round(blo_real).astype(int), 0, self._bins + 1)
+                    blo = np.clip(
+                        np.round(blo_real).astype(int), 0, self._bins + 1
+                    ).item()
                     if abs(blo - blo_real) > 1.0e-14:
                         warnings.warn(
                             f"Reducing along axis {self!r}: requested start {the_slice.start!r} between bin boundaries, no interpolation is performed",
@@ -599,7 +586,7 @@ class Bin(DenseAxis):
                             f"Reducing along axis {self!r}: requested start {the_slice.start!r} between bin boundaries, no interpolation is performed",
                             RuntimeWarning,
                         )
-                    blo = self.index(the_slice.start)
+                    blo = self.index(the_slice.start).item()
             if the_slice.stop is not None:
                 if the_slice.stop > self._hi:
                     raise ValueError(
@@ -609,7 +596,9 @@ class Bin(DenseAxis):
                     bhi_real = (the_slice.stop - self._lo) * self._bins / (
                         self._hi - self._lo
                     ) + 1
-                    bhi = np.clip(np.round(bhi_real).astype(int), 0, self._bins + 1)
+                    bhi = np.clip(
+                        np.round(bhi_real).astype(int), 0, self._bins + 1
+                    ).item()
                     if abs(bhi - bhi_real) > 1.0e-14:
                         warnings.warn(
                             f"Reducing along axis {self!r}: requested stop {the_slice.stop!r} between bin boundaries, no interpolation is performed",
@@ -621,7 +610,7 @@ class Bin(DenseAxis):
                             f"Reducing along axis {self!r}: requested stop {the_slice.stop!r} between bin boundaries, no interpolation is performed",
                             RuntimeWarning,
                         )
-                    bhi = self.index(the_slice.stop)
+                    bhi = self.index(the_slice.stop).item()
                 # Assume null ranges (start==stop) mean we want the bin containing the value
                 if blo is not None and blo == bhi:
                     bhi += 1
@@ -636,9 +625,85 @@ class Bin(DenseAxis):
             raise NotImplementedError("Slice histogram from list of intervals")
         raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
 
-    def reduced(self, islice):
-        """Return a new axis with reduced binning
+    @property
+    def size(self):
+        """Number of bins"""
+        return (
+            self._bins
+            if isinstance(self._bins, (int, np.integer, cupy.integer))
+            else len(self._bins)
+        )
 
+    def edges(self, flow=False):
+        """Bin boundaries
+
+        Parameters
+        ----------
+            flow : bool
+        """
+        if self._uniform:
+            out = cupy.linspace(self._lo, self._hi, self._bins + 1)
+        else:
+            out = self._bins[:-1].copy()
+        out = cupy.r_[
+            2 * out[0] - out[1], out, 2 * out[-1] - out[-2], 3 * out[-1] - 2 * out[-2]
+        ]
+        return out[_overflow_behavior(flow)]
+
+    def centers(self, flow=False):
+        """Bin centers
+
+        Parameters
+        ----------
+            flow : bool
+        """
+        edges = self.edges(flow)
+        return (edges[:-1] + edges[1:]) / 2
+
+    def identifiers(self, flow=False):
+        """List of `Interval` identifiers"""
+        return self._intervals[_overflow_behavior(flow)]
+
+
+class Regular(Bin):
+    """
+    Make a regular axis with nice keyword arguments for underflow,
+    overflow, and growth.
+
+    Parameters
+    ----------
+        bins : int
+            The number of bins between start and stop.
+        start : float
+            The beginning value for the axis.
+        stop : float
+            The ending value for the axis.
+        name : str
+            Axis name.
+        label : str
+            Axis label.
+    """
+
+    def __init__(
+        self,
+        bins: int,
+        start: float,
+        stop: float,
+        *,
+        name: str = "",
+        label: str = "",
+    ) -> None:
+        super().__init__(
+            bins,
+            start,
+            stop,
+            name=name,
+            label=label,
+        )
+
+    def reduced(self, islice):
+        """
+        Return a new axis with reduced binning
         The new binning corresponds to the slice made on this axis.
         Overflow will be taken care of by ``Hist.__getitem__``
 
@@ -654,66 +719,66 @@ class Bin(DenseAxis):
             )
         if islice.start is None and islice.stop is None:
             return self
-        if self._uniform:
-            lo = self._lo
-            ilo = 0
-            if islice.start is not None:
-                lo += (islice.start - 1) * (self._hi - self._lo) / self._bins
-                ilo = islice.start - 1
-            hi = self._hi
-            ihi = self._bins
-            if islice.stop is not None:
-                hi = self._lo + (islice.stop - 1) * (self._hi - self._lo) / self._bins
-                ihi = islice.stop - 1
-            bins = ihi - ilo
-            # TODO: remove this once satisfied it works
-            rbins = (hi - lo) * self._bins / (self._hi - self._lo)
-            assert abs(bins - rbins) < 1e-14, "%d %f %r" % (bins, rbins, self)
-            return Bin(self._name, self._label, bins, lo, hi)
-        else:
-            lo = None if islice.start is None else islice.start - 1
-            hi = -1 if islice.stop is None else islice.stop
-            bins = self._bins[slice(lo, hi)]
-            return Bin(self._name, self._label, bins)
+        lo = self._lo
+        ilo = 0
+        if islice.start is not None:
+            lo += (islice.start - 1) * (self._hi - self._lo) / self._bins
+            ilo = islice.start - 1
+        hi = self._hi
+        ihi = self._bins
+        if islice.stop is not None:
+            hi = self._lo + (islice.stop - 1) * (self._hi - self._lo) / self._bins
+            ihi = islice.stop - 1
+        bins = ihi - ilo
+        # TODO: remove this once satisfied it works
+        rbins = (hi - lo) * self._bins / (self._hi - self._lo)
+        assert abs(bins - rbins) < 1e-14, "%d %f %r" % (bins, rbins, self)
+        return Regular(bins, lo, hi, name=self._name, label=self._label)
 
-    @property
-    def size(self):
-        """Number of bins, including overflow (i.e. ``n + 3``)"""
-        if self._uniform:
-            return self._bins + 3
-        # (inf added at constructor)
-        return len(self._bins) + 1
 
-    def edges(self, overflow="none"):
-        """Bin boundaries
+class Variable(Bin):
+    """
+    Make an axis with irregularly spaced bins. Provide a list
+    or array of bin edges, and len(edges)-1 bins will be made.
+
+    Parameters
+    ----------
+        edges : Array[float]
+            The edges for the bins. There will be one less bin than edges.
+        name : str
+            Axis name.
+        label : str
+            Axis label.
+    """
+
+    def __init__(
+        self,
+        edges: Iterable[float],
+        *,
+        name: str = "",
+        label: str = "",
+    ) -> None:
+        super().__init__(edges, name=name, label=label)
+
+    def reduced(self, islice):
+        """
+        Return a new axis with reduced binning
+        The new binning corresponds to the slice made on this axis.
+        Overflow will be taken care of by ``Hist.__getitem__``.
 
         Parameters
         ----------
-            overflow : str
-                Create overflow and/or underflow bins by adding a bin of same width to each end.
-                See `Hist.sum` description for the allowed values.
+            islice : slice
+                ``islice.start`` and ``islice.stop`` should be None or within ``[1, ax.size() - 1]``
+                This slice is usually as returned from ``Bin._ireduce``
         """
-        if self._uniform:
-            out = cupy.linspace(self._lo, self._hi, self._bins + 1)
-        else:
-            out = self._bins[:-1].copy()
-        out = cupy.r_[
-            2 * out[0] - out[1], out, 2 * out[-1] - out[-2], 3 * out[-1] - 2 * out[-2]
-        ]
-        return out[_overflow_behavior(overflow)]
-
-    def centers(self, overflow="none"):
-        """Bin centers
-
-        Parameters
-        ----------
-            overflow : str
-                Create overflow and/or underflow bins by adding a bin of same width to each end.
-                See `Hist.sum` description for the allowed values.
-        """
-        edges = self.edges(overflow)
-        return (edges[:-1] + edges[1:]) / 2
-
-    def identifiers(self, overflow="none"):
-        """List of `Interval` identifiers"""
-        return self._intervals[_overflow_behavior(overflow)]
+        if islice.step is not None:
+            raise NotImplementedError(
+                "Step slicing can be interpreted as a rebin factor"
+            )
+        if islice.start is None and islice.stop is None:
+            return self
+        lo = None if islice.start is None else islice.start - 1
+        hi = -1 if islice.stop is None else islice.stop
+        bins = self._bins[slice(lo, hi)]
+        return Variable(bins, name=self._name, label=self._label)

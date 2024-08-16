@@ -5,3 +5,4 @@ cuda_histogram.axis package
    :members:
    :undoc-members:
    :show-inheritance:
+   :private-members:
