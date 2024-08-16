@@ -26,7 +26,7 @@ def _assemble_blocks(array, ndslice, depth=0):
     into a nested list of numpy arrays that can be passed to np.block()
 
     Under the assumption that index 0 of any dimension is underflow, -2 overflow, -1 nanflow,
-     this function will add the range not in the slice to the appropriate (over/under)flow bins
+    this function will add the range not in the slice to the appropriate (over/under)flow bins
     """
     if depth == 0:
         ndslice = [_MaybeSumSlice(s.start, s.stop, False) for s in ndslice]
@@ -53,18 +53,14 @@ class Hist:
     """
     Construct a new histogram.
 
-    If you pass in a single argument, this will be treated as a
-    histogram and this will convert the histogram to this type of
-    histogram.
-
     Parameters
     ----------
-    *args : Axis
-        Provide 1 or more axis instances.
-    label: str = None
-        Histogram's label
-    name: str = None
-        Histogram's name
+        *args : Axis
+            Provide 1 or more axis instances.
+        label: str = None
+            Histogram's label
+        name: str = None
+            Histogram's name
     """
 
     DEFAULT_DTYPE = "d"
@@ -141,7 +137,7 @@ class Hist:
         for key in self._sumw:
             self._sumw2[key] = self._sumw[key].copy()
 
-    # TODO: should allow integer indexing (UHI)
+    # TODO: should allow better indexing (UHI)
     def __getitem__(self, keys):
         if isinstance(keys, slice) and not all(
             isinstance(s, (int, float)) or s is None
@@ -152,8 +148,8 @@ class Hist:
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
         if not isinstance(keys, tuple):
             keys = (keys,)
-        if len(keys) > self.dim():
-            raise IndexError("Too many indices for this histogram")
+        if len(keys) != self.dim():
+            raise IndexError("Too many or too less indices for this histogram")
         elif len(keys) < self.dim():
             if Ellipsis in keys:
                 idx = keys.index(Ellipsis)
@@ -197,29 +193,15 @@ class Hist:
         return out
 
     def fill(self, *args, weight=None):
-        """Fill sum of weights from columns
+        """
+        Insert data into the histogram.
 
         Parameters
         ----------
-            ``**values``
-                Keyword arguments, one for each axis name, of either flat numpy arrays
-                (for dense dimensions) or literals (for sparse dimensions) which will
-                be used to fill bins at the corresponding indices.
-
-        Note
-        ----
-            The reserved keyword ``weight``, if specified, will increment sum of weights
-            by the given column values, which must be broadcastable to the same dimension as all other
-            columns.  Upon first use, this will trigger the storage of the sum of squared weights.
-
-
-        Examples
-        --------
-
-        Filling the histogram from the `Hist` example:
-
-        >>> h.fill(species='ducks', x=np.random.normal(size=10), y=np.random.normal(size=10), weight=np.ones(size=10) * 3)
-
+            *args : cupy.ndarray
+                Provide one value or array per dimension.
+            weight : cupy.ndarray
+                Provide weights.
         """
         if not all(isinstance(a, (cupy.ndarray, str)) for a in args):
             raise TypeError("pass CuPy arrays")
@@ -290,12 +272,11 @@ class Hist:
             return arr[tuple(_overflow_behavior(flow) for _ in range(self.dense_dim()))]
 
     def values(self, flow=False):
-        """Extract the sum of weights arrays from this histogram
+        """Extract the values from this histogram.
 
         Parameters
         ----------
-            flow : bool
-                See `sum` description for meaning of allowed values
+        flow : bool
         """
 
         # TODO: cleanup logic for sparse axis
@@ -319,6 +300,12 @@ class Hist:
         )
 
     def variance(self, flow=False):
+        """Extract the variances from this histogram.
+
+        Parameters
+        ----------
+        flow : bool
+        """
         return (
             None
             if self._sumw2 is None
@@ -353,7 +340,14 @@ class Hist:
     #         return axis.identifiers(overflow=overflow)
 
     def to_boost(self):
-        """Convert this cuda_histogram object to a boost_histogram object"""
+        """
+        Convert this cuda_histogram object to a boost_histogram object.
+
+        underflow and overflow are set True and nanflow is lost in the conversion.
+
+        Appropriate boost-histogram axis and storage are automatically chosen.
+        All the arguments of cuda-histogram's axis and histogram are passed down.
+        """
         import boost_histogram
 
         newaxes = []

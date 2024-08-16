@@ -15,6 +15,7 @@ __all__: list[str] = [
     # "Cat",
     "Interval",
     # "StringBin",
+    "Bin",
 ]
 
 _replace_nans = cupy.ElementwiseKernel("T v", "T x", "x = isnan(x)?v:x", "replace_nans")
@@ -388,7 +389,9 @@ class DenseAxis(Axis):
 
 
 class Bin(DenseAxis):
-    """A binned axis with name, label, and binning.
+    """Super class for dense axes.
+
+    A binned axis with name, label, and binning.
 
     Parameters
     ----------
@@ -569,7 +572,9 @@ class Bin(DenseAxis):
                     blo_real = (the_slice.start - self._lo) * self._bins / (
                         self._hi - self._lo
                     ) + 1
-                    blo = np.clip(np.round(blo_real).astype(int), 0, self._bins + 1)
+                    blo = np.clip(
+                        np.round(blo_real).astype(int), 0, self._bins + 1
+                    ).item()
                     if abs(blo - blo_real) > 1.0e-14:
                         warnings.warn(
                             f"Reducing along axis {self!r}: requested start {the_slice.start!r} between bin boundaries, no interpolation is performed",
@@ -591,7 +596,9 @@ class Bin(DenseAxis):
                     bhi_real = (the_slice.stop - self._lo) * self._bins / (
                         self._hi - self._lo
                     ) + 1
-                    bhi = np.clip(np.round(bhi_real).astype(int), 0, self._bins + 1)
+                    bhi = np.clip(
+                        np.round(bhi_real).astype(int), 0, self._bins + 1
+                    ).item()
                     if abs(bhi - bhi_real) > 1.0e-14:
                         warnings.warn(
                             f"Reducing along axis {self!r}: requested stop {the_slice.stop!r} between bin boundaries, no interpolation is performed",
@@ -632,9 +639,7 @@ class Bin(DenseAxis):
 
         Parameters
         ----------
-            overflow : str
-                Create overflow and/or underflow bins by adding a bin of same width to each end.
-                See `Hist.sum` description for the allowed values.
+            flow : bool
         """
         if self._uniform:
             out = cupy.linspace(self._lo, self._hi, self._bins + 1)
@@ -650,9 +655,7 @@ class Bin(DenseAxis):
 
         Parameters
         ----------
-            overflow : str
-                Create overflow and/or underflow bins by adding a bin of same width to each end.
-                See `Hist.sum` description for the allowed values.
+            flow : bool
         """
         edges = self.edges(flow)
         return (edges[:-1] + edges[1:]) / 2
@@ -663,25 +666,22 @@ class Bin(DenseAxis):
 
 
 class Regular(Bin):
-    """A binned axis with name, label, and binning.
+    """
+    Make a regular axis with nice keyword arguments for underflow,
+    overflow, and growth.
 
     Parameters
     ----------
+        bins : int
+            The number of bins between start and stop.
+        start : float
+            The beginning value for the axis.
+        stop : float
+            The ending value for the axis.
         name : str
-            is used as a keyword in histogram filling, immutable
+            Axis name.
         label : str
-            describes the meaning of the axis, can be changed
-        n_or_arr : int or list or np.ndarray
-            Integer number of bins, if uniform binning. Otherwise, a list or
-            numpy 1D array of bin boundaries.
-        lo : float, optional
-            lower boundary of bin range, if uniform binning
-        hi : float, optional
-            upper boundary of bin range, if uniform binning
-
-    This axis will generate frequencies for n+3 bins, special bin indices:
-    ``0 = underflow, n+1 = overflow, n+2 = nanflow``
-    Bin boundaries are [lo, hi)
+            Axis label.
     """
 
     def __init__(
@@ -702,9 +702,11 @@ class Regular(Bin):
         )
 
     def reduced(self, islice):
-        """Return a new axis with reduced binning
+        """
+        Return a new axis with reduced binning
         The new binning corresponds to the slice made on this axis.
         Overflow will be taken care of by ``Hist.__getitem__``
+
         Parameters
         ----------
             islice : slice
@@ -735,25 +737,18 @@ class Regular(Bin):
 
 
 class Variable(Bin):
-    """A binned axis with name, label, and binning.
+    """
+    Make an axis with irregularly spaced bins. Provide a list
+    or array of bin edges, and len(edges)-1 bins will be made.
 
     Parameters
     ----------
+        edges : Array[float]
+            The edges for the bins. There will be one less bin than edges.
         name : str
-            is used as a keyword in histogram filling, immutable
+            Axis name.
         label : str
-            describes the meaning of the axis, can be changed
-        n_or_arr : int or list or np.ndarray
-            Integer number of bins, if uniform binning. Otherwise, a list or
-            numpy 1D array of bin boundaries.
-        lo : float, optional
-            lower boundary of bin range, if uniform binning
-        hi : float, optional
-            upper boundary of bin range, if uniform binning
-
-    This axis will generate frequencies for n+3 bins, special bin indices:
-    ``0 = underflow, n+1 = overflow, n+2 = nanflow``
-    Bin boundaries are [lo, hi)
+            Axis label.
     """
 
     def __init__(
@@ -766,9 +761,11 @@ class Variable(Bin):
         super().__init__(edges, name=name, label=label)
 
     def reduced(self, islice):
-        """Return a new axis with reduced binning
+        """
+        Return a new axis with reduced binning
         The new binning corresponds to the slice made on this axis.
-        Overflow will be taken care of by ``Hist.__getitem__``
+        Overflow will be taken care of by ``Hist.__getitem__``.
+
         Parameters
         ----------
             islice : slice

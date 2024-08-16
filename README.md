@@ -13,94 +13,203 @@
 [![Conda latest release][conda-version]][conda-link]
 [![LICENSE][license-badge]][license-link] [![Scikit-HEP][sk-badge]][sk-link]
 
-`cuda-histogram` is a histogram filling package for GPUs. The package follows
-[UHI](https://uhi.readthedocs.io) and keeps its API similar to
+`cuda-histogram` is a histogram filling package for GPUs. The package tries to
+follow [UHI](https://uhi.readthedocs.io) and keeps its API similar to
 [boost-histogram](https://github.com/scikit-hep/boost-histogram) and
 [hist](https://github.com/scikit-hep/hist).
 
-The package is under active development at the moment.
+Main features of cuda-histogram:
 
-## Example
+- Implements a subset of the features of boost-histogram using CuPy (see API
+  documentation for complete list):
+  - Axes
+    - `Regular` and `Variable` axes
+      - `edges()`
+      - `centers()`
+      - `index(...)`
+      - ...
+  - Histogram
+    - `fill(..., weight=...)` (including `Nan` flow)
+    - simple indexing with slicing (see example below)
+    - `values(flow=...)`
+    - `variance(flow=...)`
+- Allows users to detach the generated GPU histogram to CPU -
+  - `to_boost()` - converts to `boost-histogram.Histogram`
+  - `to_hist()` - converts to `hist.Hist`
+
+Near future goals for the package -
+
+- Implement support for `Categorical` axes (exists internally but need
+  refactoring to match boost-histogram's API)
+- Improve indexing (`__getitem__`) to exactly match boost-histogram's API
+
+## Installation
+
+cuda-histogram is available on [PyPI](https://pypi.org/project/cuda-histogram/)
+as well as on [conda](https://anaconda.org/conda-forge/cuda-histogram). The
+library can be installed using `pip` -
+
+```
+pip install cuda-histogram
+```
+
+or using `conda` -
+
+```
+conda install -c conda-forge cuda-histogram
+```
+
+## Usage
+
+Ideally, a user would want to create a cuda-histogram, fill values on GPU, and
+convert the filled histogram to boost-histogram/Hist object to access all the
+UHI functionalities.
+
+### Creating a histogram
 
 ```py
-In [1]: import cuda_histogram; import cupy as cp
+import cuda_histogram; import cupy as cp
 
-In [2]: a = cuda_histogram.axis.Regular(10, 0, 1)
+ax1 = cuda_histogram.axis.Regular(10, 0, 1)
+ax2 = cuda_histogram.axis.Variable([0, 2, 3, 6])
 
-In [3]: b = cuda_histogram.axis.Variable([0, 2, 3, 6])
+h = cuda_histogram.Hist(ax1, ax2)
 
-In [4]: c = cuda_histogram.Hist(a, b)
-
-In [5]: a, b, c
-Out[5]:
-(Regular(10, 0, 1),
- Variable([0. 2. 3. 6.]),
- Hist(Regular(10, 0, 1), Variable([0. 2. 3. 6.])))
-
-In [6]: c.fill(cp.random.normal(size=1_000_000), cp.random.normal(size=1_000_000))
-
-In [7]: c.values(), type(c.values())
-Out[7]:
-(array([[28493.,  1282.,    96.],
-        [29645.,  1366.,    91.],
-        [30465.,  1397.,    80.],
-        [31537.,  1473.,    81.],
-        [32608.,  1454.,   102.],
-        [33015.,  1440.,    83.],
-        [33992.,  1482.,    87.],
-        [34388.,  1482.,   111.],
-        [34551.,  1517.,    90.],
-        [35177.,  1515.,    85.]]),
- cupy.ndarray)
-
-In [8]: c[0, 0], type(c[0, 0])
-Out[8]: (array(28493.), cupy.ndarray)
-
-In [9]: c[0:2, 0], type(c[0, 0]) # should ideally return a reduced histogram
-Out[9]: (array([28493., 29645.]), cupy.ndarray)
-
-In [10]: c.to_boost()
-Out[10]:
-Histogram(
-  Regular(10, 0, 1),
-  Variable([0, 2, 3, 6]),
-  storage=Double()) # Sum: 339185.0 (945991.0 with flow)
-
-In [11]: c.to_boost().values(), type(c.to_boost().values())
-Out[11]:
-(array([[28493.,  1282.,    96.],
-        [29645.,  1366.,    91.],
-        [30465.,  1397.,    80.],
-        [31537.,  1473.,    81.],
-        [32608.,  1454.,   102.],
-        [33015.,  1440.,    83.],
-        [33992.,  1482.,    87.],
-        [34388.,  1482.,   111.],
-        [34551.,  1517.,    90.],
-        [35177.,  1515.,    85.]]),
- numpy.ndarray)
-
-In [12]: c.to_hist()
-Out[12]:
-Hist(
-  Regular(10, 0, 1, label='Axis 0'),
-  Variable([0, 2, 3, 6], label='Axis 1'),
-  storage=Double()) # Sum: 339185.0 (945991.0 with flow)
-
-In [13]: c.to_hist().values(), type(c.to_hist().values())
-Out[13]:
-(array([[28493.,  1282.,    96.],
-        [29645.,  1366.,    91.],
-        [30465.,  1397.,    80.],
-        [31537.,  1473.,    81.],
-        [32608.,  1454.,   102.],
-        [33015.,  1440.,    83.],
-        [33992.,  1482.,    87.],
-        [34388.,  1482.,   111.],
-        [34551.,  1517.,    90.],
-        [35177.,  1515.,    85.]]),
-    numpy.ndarray)
+>>> ax1, ax2, h
+(Regular(10, 0, 1), Variable([0. 2. 3. 6.]), Hist(Regular(10, 0, 1), Variable([0. 2. 3. 6.])))
 ```
+
+### Filling a histogram
+
+Differences in API (from boost-histogram) -
+
+- Has an additional `NaN` flow
+- Accepts only CuPy arrays
+
+```py
+h.fill(cp.random.normal(size=1_000_000), cp.random.normal(size=1_000_000))  # set weight=... for weighted fills
+
+>>> h.values(), type(h.values())  # set flow=True for flow bins (underflow, overflow, nanflow)
+(array([[28532.,  1238.,    64.],
+       [29603.,  1399.,    61.],
+       [30543.,  1341.,    78.],
+       [31478.,  1420.,    98.],
+       [32692.,  1477.,    92.],
+       [32874.,  1441.,    96.],
+       [33584.,  1515.,    88.],
+       [34304.,  1490.,   114.],
+       [34887.,  1598.,   116.],
+       [35341.,  1472.,   103.]]), <class 'cupy.ndarray'>)
+```
+
+### Indexing axes and histograms
+
+Differences in API (from boost-histogram) -
+
+- `underflow` is indexed as `0` and not `1`
+- `ax[...]` will return a `cuda_histogram.Interval` object
+- No interpolation is performed
+- `Hist` indices should be in the range of bin edges, instead of integers
+
+```py
+>>> ax1.index(0.5)
+array([6])
+
+>>> ax1.index(-1)
+array([0])
+
+>>> ax1[0]
+<Interval ((-inf, 0.0)) instance at 0x1c905208790>
+
+>>> h[0, 0], type(h[0, 0])
+(Hist(Regular(1, 0.0, 0.1), Variable([0. 2.])), <class 'cuda_histogram.hist.Hist'>)
+
+>>> h[0, 0].values(), type(h[0, 0].values())
+(array([[28532.]]), <class 'cupy.ndarray'>)
+
+>>> h[0, :].values(), type(h[0, 0].values())
+(array([[28532.,  1238.,    64.]]), <class 'cupy.ndarray'>)
+
+>>> h[0.2, :].values(), type(h[0, 0].values()) # indices in range of bin edges
+(array([[30543.,  1341.,    78.]]), <class 'cupy.ndarray'>)
+
+>>> h[:, 1:2].values(), type(h[0, 0].values()) # no interpolation
+C:\Users\Saransh\Saransh_softwares\OpenSource\Python\cuda-histogram\src\cuda_histogram\axis\__init__.py:580: RuntimeWarning: Reducing along axis Variable([0. 2. 3. 6.]): requested start 1 between bin boundaries, no interpolation is performed
+  warnings.warn(
+(array([[28532.],
+       [29603.],
+       [30543.],
+       [31478.],
+       [32692.],
+       [32874.],
+       [33584.],
+       [34304.],
+       [34887.],
+       [35341.]]), <class 'cupy.ndarray'>)
+```
+
+### Converting to CPU
+
+All the existing functionalities of boost-histogram and Hist can be used on the
+converted histogram.
+
+```py
+h.to_boost()
+
+>>> h.to_boost().values(), type(h.to_boost().values())
+(array([[28532.,  1238.,    64.],
+       [29603.,  1399.,    61.],
+       [30543.,  1341.,    78.],
+       [31478.,  1420.,    98.],
+       [32692.,  1477.,    92.],
+       [32874.,  1441.,    96.],
+       [33584.,  1515.,    88.],
+       [34304.,  1490.,   114.],
+       [34887.,  1598.,   116.],
+       [35341.,  1472.,   103.]]), <class 'numpy.ndarray'>)
+
+h.to_hist()
+
+>>> h.to_hist().values(), type(h.to_hist().values())
+(array([[28532.,  1238.,    64.],
+       [29603.,  1399.,    61.],
+       [30543.,  1341.,    78.],
+       [31478.,  1420.,    98.],
+       [32692.,  1477.,    92.],
+       [32874.,  1441.,    96.],
+       [33584.,  1515.,    88.],
+       [34304.,  1490.,   114.],
+       [34887.,  1598.,   116.],
+       [35341.,  1472.,   103.]]), <class 'numpy.ndarray'>)
+```
+
+## Getting help
+
+- `cuda-histogram`'s code is hosted on
+  [GitHub](https://github.com/Saransh-cpp/cuda-histogram).
+- If something is not working the way it should, or if you want to request a new
+  feature, create a new
+  [issue](https://github.com/Saransh-cpp/cuda-histogram/issues) on GitHub.
+- To discuss something related to `cuda-histogram`, use the
+  [discussions](https://github.com/Saransh-cpp/cuda-histogram/discussions/) tab
+  on GitHub.
+
+## Contributing
+
+Contributions of any kind welcome! See
+[CONTRIBUTING.md](./.github/CONTRIBUTING.md) for information on setting up a
+development environment.
+
+## Acknowledgements
+
+This library was primarily developed by Lindsey Gray, Saransh Chopra, and Jim
+Pivarski.
+
+Support for this work was provided by the National Science Foundation
+cooperative agreement OAC-1836650 and PHY-2323298 (IRIS-HEP). Any opinions,
+findings, conclusions or recommendations expressed in this material are those of
+the authors and do not necessarily reflect the views of the National Science
+Foundation.
 
 <!-- prettier-ignore-start -->
 [actions-badge]:            https://github.com/Saransh-cpp/cuda-histogram/workflows/CI/badge.svg
