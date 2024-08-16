@@ -21,7 +21,7 @@ follow [UHI](https://uhi.readthedocs.io) and keeps its API similar to
 Main features of cuda-histogram:
 
 - Implements a subset of the features of boost-histogram using CuPy (see API
-  documentation for complete list):
+  documentation for a complete list):
   - Axes
     - `Regular` and `Variable` axes
       - `edges()`
