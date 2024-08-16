@@ -7,7 +7,7 @@ import numpy as np
 
 from cuda_histogram.axis import (
     Axis,
-    Cat,
+    # Cat,
     DenseAxis,
     Regular,
     SparseAxis,
@@ -23,7 +23,7 @@ _MaybeSumSlice = namedtuple("_MaybeSumSlice", ["start", "stop", "sum"])
 def _assemble_blocks(array, ndslice, depth=0):
     """
     Turns an n-dimensional slice of array (tuple of slices)
-     into a nested list of numpy arrays that can be passed to np.block()
+    into a nested list of numpy arrays that can be passed to np.block()
 
     Under the assumption that index 0 of any dimension is underflow, -2 overflow, -1 nanflow,
      this function will add the range not in the slice to the appropriate (over/under)flow bins
@@ -113,15 +113,9 @@ class Hist:
         """A label describing the meaning of the sum of weights"""
         return self._name
 
-    @label.setter
-    def name(self, name):  # noqa: F811
+    @name.setter
+    def name(self, name):
         self._name = name
-
-    def axis(self, axis_name):
-        """Get an ``Axis`` object"""
-        if axis_name in self._axes:
-            return self._axes[self._axes.index(axis_name)]
-        raise KeyError(f"No axis {axis_name} found in {self!r}")
 
     def axes(self):
         """Get all axes in this histogram"""
@@ -147,60 +141,60 @@ class Hist:
         for key in self._sumw:
             self._sumw2[key] = self._sumw[key].copy()
 
-    # fix this
+    # TODO: should allow integer indexing (UHI)
     def __getitem__(self, keys):
         if isinstance(keys, slice) and not all(
-            isinstance(s, int) or s is None for s in [keys.start, keys.stop, keys.step]
+            isinstance(s, (int, float)) or s is None
+            for s in [keys.start, keys.stop, keys.step]
         ):
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
-        if not isinstance(keys, slice) and not isinstance(keys, (int, tuple)):
+        if not isinstance(keys, slice) and not isinstance(keys, (int, float, tuple)):
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
-        return self.values()[keys]
-        # if not isinstance(keys, tuple):
-        #     keys = (keys,)
-        # if len(keys) > self.dim():
-        #     raise IndexError("Too many indices for this histogram")
-        # elif len(keys) < self.dim():
-        #     if Ellipsis in keys:
-        #         idx = keys.index(Ellipsis)
-        #         slices = (slice(None),) * (self.dim() - len(keys) + 1)
-        #         keys = keys[:idx] + slices + keys[idx + 1 :]
-        #     else:
-        #         slices = (slice(None),) * (self.dim() - len(keys))
-        #         keys += slices
-        # sparse_idx = []
-        # dense_idx = []
-        # new_dims = []
-        # for s, ax in zip(keys, self._axes):
-        #     if isinstance(ax, SparseAxis):
-        #         sparse_idx.append(ax._ireduce(s))
-        #         new_dims.append(ax)
-        #     else:
-        #         islice = ax._ireduce(s)
-        #         dense_idx.append(islice)
-        #         new_dims.append(ax.reduced(islice))
-        # dense_idx = tuple(dense_idx)
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        if len(keys) > self.dim():
+            raise IndexError("Too many indices for this histogram")
+        elif len(keys) < self.dim():
+            if Ellipsis in keys:
+                idx = keys.index(Ellipsis)
+                slices = (slice(None),) * (self.dim() - len(keys) + 1)
+                keys = keys[:idx] + slices + keys[idx + 1 :]
+            else:
+                slices = (slice(None),) * (self.dim() - len(keys))
+                keys += slices
+        sparse_idx = []
+        dense_idx = []
+        new_dims = []
+        for s, ax in zip(keys, self._axes):
+            if isinstance(ax, SparseAxis):
+                sparse_idx.append(ax._ireduce(s))
+                new_dims.append(ax)
+            else:
+                islice = ax._ireduce(s)
+                dense_idx.append(islice)
+                new_dims.append(ax.reduced(islice))
+        dense_idx = tuple(dense_idx)
 
-        # def dense_op(array):
-        #     as_numpy = array.get()
-        #     blocked = np.block(_assemble_blocks(as_numpy, dense_idx))
-        #     return cupy.asarray(blocked)
+        def dense_op(array):
+            as_numpy = array.get()
+            blocked = np.block(_assemble_blocks(as_numpy, dense_idx))
+            return cupy.asarray(blocked)
 
-        # out = Hist(*new_dims, label=self._label)
-        # if self._sumw2 is not None:
-        #     out._init_sumw2()
-        # for sparse_key in self._sumw:
-        #     if not all(k in idx for k, idx in zip(sparse_key, sparse_idx)):
-        #         continue
-        #     if sparse_key in out._sumw:
-        #         out._sumw[sparse_key] += dense_op(self._sumw[sparse_key])
-        #         if self._sumw2 is not None:
-        #             out._sumw2[sparse_key] += dense_op(self._sumw2[sparse_key])
-        #     else:
-        #         out._sumw[sparse_key] = dense_op(self._sumw[sparse_key]).copy()
-        #         if self._sumw2 is not None:
-        #             out._sumw2[sparse_key] = dense_op(self._sumw2[sparse_key]).copy()
-        # return out
+        out = Hist(*new_dims, label=self._label)
+        if self._sumw2 is not None:
+            out._init_sumw2()
+        for sparse_key in self._sumw:
+            if not all(k in idx for k, idx in zip(sparse_key, sparse_idx)):
+                continue
+            if sparse_key in out._sumw:
+                out._sumw[sparse_key] += dense_op(self._sumw[sparse_key])
+                if self._sumw2 is not None:
+                    out._sumw2[sparse_key] += dense_op(self._sumw2[sparse_key])
+            else:
+                out._sumw[sparse_key] = dense_op(self._sumw[sparse_key]).copy()
+                if self._sumw2 is not None:
+                    out._sumw2[sparse_key] = dense_op(self._sumw2[sparse_key]).copy()
+        return out
 
     def fill(self, *args, weight=None):
         """Fill sum of weights from columns
@@ -304,6 +298,20 @@ class Hist:
                 See `sum` description for meaning of allowed values
         """
 
+        # TODO: cleanup logic for sparse axis
+        # out = {}
+        # for sparse_key in self._sumw:
+        #     id_key = tuple(ax[k] for ax, k in zip(self.sparse_axes(), sparse_key))
+        #     if sumw2:
+        #         if self._sumw2 is not None:
+        #             w2 = self._view_dim(self._sumw2[sparse_key])
+        #         else:
+        #             w2 = self._view_dim(self._sumw[sparse_key])
+        #         out[id_key] = (self._view_dim(self._sumw[sparse_key]), w2)
+        #     else:
+        #         out[id_key] = self._view_dim(self._sumw[sparse_key])
+        # return out
+
         return (
             self._view_dim(cupy.zeros(shape=self._dense_shape), flow)
             if self._sumw == {}
@@ -317,32 +325,32 @@ class Hist:
             else self._view_dim(next(iter(self._sumw2.values())), flow)
         )
 
-    def identifiers(self, axis, overflow="none"):
-        """Return a list of identifiers for an axis
+    # TODO: cleanup logic for sparse axis
+    # def identifiers(self, axis, overflow="none"):
+    #     """Return a list of identifiers for an axis
 
-        Parameters
-        ----------
-            axis
-                Axis name or Axis object
-            overflow
-                See `sum` description for meaning of allowed values
-        """
-        axis = self.axis(axis)
-        if isinstance(axis, SparseAxis):  # noqa: RET503
-            out = []
-            isparse = self._isparse(axis)
-            for identifier in axis.identifiers():
-                if any(k[isparse] == axis.index(identifier) for k in self._sumw):
-                    out.append(identifier)
-            if axis.sorting == "integral":
-                hproj = {
-                    key[0]: integral
-                    for key, integral in self.project(axis).values().items()
-                }
-                out.sort(key=lambda k: hproj[k.name])
-            return out
-        elif isinstance(axis, DenseAxis):
-            return axis.identifiers(overflow=overflow)
+    #     Parameters
+    #     ----------
+    #         axis
+    #             Axis object
+    #         overflow
+    #             See `sum` description for meaning of allowed values
+    #     """
+    #     if isinstance(axis, SparseAxis):
+    #         out = []
+    #         isparse = self._isparse(axis)
+    #         for identifier in axis.identifiers():
+    #             if any(k[isparse] == axis.index(identifier) for k in self._sumw):
+    #                 out.append(identifier)
+    #         if axis.sorting == "integral":
+    #             hproj = {
+    #                 key[0]: integral
+    #                 for key, integral in self.project(axis).values().items()
+    #             }
+    #             out.sort(key=lambda k: hproj[k.name])
+    #         return out
+    #     elif isinstance(axis, DenseAxis):
+    #         return axis.identifiers(overflow=overflow)
 
     def to_boost(self):
         """Convert this cuda_histogram object to a boost_histogram object"""
@@ -358,7 +366,7 @@ class Hist:
                     underflow=True,
                     overflow=True,
                 )
-                newaxis.name = axis.name
+                newaxis._ax.metadata["name"] = axis.name
                 newaxis.label = axis.label
                 newaxes.append(newaxis)
             elif isinstance(axis, Variable):
@@ -367,19 +375,20 @@ class Hist:
                     underflow=True,
                     overflow=True,
                 )
-                newaxis.name = axis.name
+                newaxis._ax.metadata["name"] = axis.name
                 newaxis.label = axis.label
                 newaxes.append(newaxis)
-            elif isinstance(axis, Cat):
-                identifiers = self.identifiers(axis)
-                newaxis = boost_histogram.axis.StrCategory(
-                    [x.name for x in identifiers],
-                    growth=True,
-                )
-                newaxis.name = axis.name
-                newaxis.label = axis.label
-                newaxis.bin_labels = [x.label for x in identifiers]
-                newaxes.append(newaxis)
+            # TODO: cleanup logic for sparse axis
+            # elif isinstance(axis, Cat):
+            #     identifiers = self.identifiers(axis)
+            #     newaxis = boost_histogram.axis.StrCategory(
+            #         [x.name for x in identifiers],
+            #         growth=True,
+            #     )
+            #     newaxis.name = axis.name
+            #     newaxis.label = axis.label
+            #     newaxis.bin_labels = [x.label for x in identifiers]
+            #     newaxes.append(newaxis)
 
         if self._sumw2 is None:
             storage = boost_histogram.storage.Double()
@@ -388,14 +397,6 @@ class Hist:
 
         out = boost_histogram.Histogram(*newaxes, storage=storage)
         out.label = self.label
-
-        def expandkey(key):
-            kiter = iter(key)
-            for ax in newaxes:
-                if isinstance(ax, boost_histogram.axis.StrCategory):
-                    yield ax.index(next(kiter))
-                else:
-                    yield slice(None)
 
         view = out.view(flow=True)
         nonan = [slice(None, -1, None)] * (len(newaxes))
@@ -409,6 +410,15 @@ class Hist:
                 ),
                 axis=len(newaxes),
             ).get()
+
+        # TODO: cleanup logic for sparse axis
+        # def expandkey(key):
+        #     kiter = iter(key)
+        #     for ax in newaxes:
+        #         if isinstance(ax, boost_histogram.axis.StrCategory):
+        #             yield ax.index(next(kiter))
+        #         else:
+        #             yield slice(None)
 
         # if self._sumw2 is None:
         #     values = self.values(overflow="all")
@@ -430,4 +440,4 @@ class Hist:
         """Convert this cuda_histogram object to a hist object"""
         import hist
 
-        return hist.Hist(self.to_boost())
+        return hist.Hist(self.to_boost(), name=self.name)
