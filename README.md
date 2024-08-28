@@ -186,12 +186,12 @@ h.to_hist()
 ## Getting help
 
 - `cuda-histogram`'s code is hosted on
-  [GitHub](https://github.com/Saransh-cpp/cuda-histogram).
+  [GitHub](https://github.com/scikit-hep/cuda-histogram).
 - If something is not working the way it should, or if you want to request a new
   feature, create a new
-  [issue](https://github.com/Saransh-cpp/cuda-histogram/issues) on GitHub.
+  [issue](https://github.com/scikit-hep/cuda-histogram/issues) on GitHub.
 - To discuss something related to `cuda-histogram`, use the
-  [discussions](https://github.com/Saransh-cpp/cuda-histogram/discussions/) tab
+  [discussions](https://github.com/scikit-hep/cuda-histogram/discussions/) tab
   on GitHub.
 
 ## Contributing
@@ -212,14 +212,14 @@ the authors and do not necessarily reflect the views of the National Science
 Foundation.
 
 <!-- prettier-ignore-start -->
-[actions-badge]:            https://github.com/Saransh-cpp/cuda-histogram/workflows/CI/badge.svg
-[actions-link]:             https://github.com/Saransh-cpp/cuda-histogram/actions
+[actions-badge]:            https://github.com/scikit-hep/cuda-histogram/workflows/CI/badge.svg
+[actions-link]:             https://github.com/scikit-hep/cuda-histogram/actions
 [codecov-badge]:            https://codecov.io/gh/Saransh-cpp/cuda-histogram/branch/main/graph/badge.svg?token=YBv60ueORQ
 [codecov-link]:             https://codecov.io/gh/Saransh-cpp/cuda-histogram
 [conda-version]:            https://img.shields.io/conda/vn/Saransh-cpp/cuda-histogram.svg
-[conda-link]:               https://github.com/Saransh-cpp/cuda-histogram
+[conda-link]:               https://github.com/scikit-hep/cuda-histogram
 [github-discussions-badge]: https://img.shields.io/static/v1?label=Discussions&message=Ask&color=blue&logo=github
-[github-discussions-link]:  https://github.com/Saransh-cpp/cuda-histogram/discussions
+[github-discussions-link]:  https://github.com/scikit-hep/cuda-histogram/discussions
 [license-badge]:            https://img.shields.io/badge/License-BSD_3--Clause-blue.svg
 [license-link]:             https://opensource.org/licenses/BSD-3-Clause
 [pre-commit-badge]:         https://results.pre-commit.ci/badge/github/Saransh-cpp/cuda-histogram/main.svg
