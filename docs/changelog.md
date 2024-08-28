@@ -2,12 +2,13 @@
 
 ## Version 0.1.0
 
-Updated documentation and a huge refactor to match the API style of Scikit-HEP histogramming packages.
+Updated documentation and a huge refactor to match the API style of Scikit-HEP
+histogramming packages.
 
 - chore: no more Python2 support in source code by [#10][]
 - docs: initial documentation infrastructure [#12][]
 - fix: rm plotting functions + make CI work for non-CUDA devices [#13][]
-- fix: match package and module structure with Hist [#16][] 
+- fix: match package and module structure with Hist [#16][]
 - fix: update tests to match new package structure [#17][]
 - refactor!: match API with Scikit-HEP [#22][]
 - chore: update links [#26][]
