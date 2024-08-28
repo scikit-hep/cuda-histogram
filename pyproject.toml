@@ -58,10 +58,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Saransh-cpp/cuda-histogram"
-"Bug Tracker" = "https://github.com/Saransh-cpp/cuda-histogram/issues"
-Discussions = "https://github.com/Saransh-cpp/cuda-histogram/discussions"
-Changelog = "https://github.com/Saransh-cpp/cuda-histogram/releases"
+Homepage = "https://github.com/scikit-hep/cuda-histogram"
+"Bug Tracker" = "https://github.com/scikit-hep/cuda-histogram/issues"
+Discussions = "https://github.com/scikit-hep/cuda-histogram/discussions"
+Changelog = "https://github.com/scikit-hep/cuda-histogram/releases"
 
 
 [tool.hatch]
