@@ -46,7 +46,7 @@ Near future goals for the package -
 ## Installation
 
 cuda-histogram is available on [PyPI](https://pypi.org/project/cuda-histogram/)
-as well as on [conda](https://anaconda.org/conda-forge/cuda-histogram). The
+as well as on [conda](https://anaconda.org/conda-forge/cuda_histogram). The
 library can be installed using `pip` -
 
 ```
@@ -56,7 +56,7 @@ pip install cuda-histogram
 or using `conda` -
 
 ```
-conda install -c conda-forge cuda-histogram
+conda install -c conda-forge cuda_histogram
 ```
 
 ## Usage
