@@ -216,8 +216,8 @@ Foundation.
 [actions-link]:             https://github.com/scikit-hep/cuda-histogram/actions
 [codecov-badge]:            https://codecov.io/gh/Saransh-cpp/cuda-histogram/branch/main/graph/badge.svg?token=YBv60ueORQ
 [codecov-link]:             https://codecov.io/gh/Saransh-cpp/cuda-histogram
-[conda-version]:            https://img.shields.io/conda/vn/Saransh-cpp/cuda-histogram.svg
-[conda-link]:               https://github.com/scikit-hep/cuda-histogram
+[conda-version]:            https://img.shields.io/conda/vn/conda-forge/cuda_histogram.svg
+[conda-link]:               https://github.com/conda-forge/cuda_histogram-feedstock
 [github-discussions-badge]: https://img.shields.io/static/v1?label=Discussions&message=Ask&color=blue&logo=github
 [github-discussions-link]:  https://github.com/scikit-hep/cuda-histogram/discussions
 [license-badge]:            https://img.shields.io/badge/License-BSD_3--Clause-blue.svg
