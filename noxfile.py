@@ -7,14 +7,14 @@ from pathlib import Path
 import nox
 
 DIR = Path(__file__).parent.resolve()
-ALL_PYTHON = ["3.8", "3.9", "3.10", "3.11", "3.12"]
+ALL_PYTHON = ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
 
 nox.needs_version = ">=2024.3.2"
-nox.options.sessions = ["lint", "pylint", "tests"]
+nox.options.sessions = ["lint", "tests"]
 nox.options.default_venv_backend = "uv|virtualenv"
 
 
-@nox.session
+@nox.session(reuse_venv=True)
 def lint(session: nox.Session) -> None:
     """
     Run the linter.
@@ -25,7 +25,7 @@ def lint(session: nox.Session) -> None:
     )
 
 
-@nox.session(python=ALL_PYTHON)
+@nox.session(reuse_venv=True, python=ALL_PYTHON)
 def tests(session: nox.Session) -> None:
     """
     Run the unit and regular tests.
@@ -34,7 +34,7 @@ def tests(session: nox.Session) -> None:
     session.run("pytest", *session.posargs)
 
 
-@nox.session(python=ALL_PYTHON)
+@nox.session(reuse_venv=True, python=ALL_PYTHON)
 def coverage(session: nox.Session) -> None:
     """Run tests and compute coverage."""
     session.posargs.append("--cov=cuda_histogram")
@@ -83,7 +83,7 @@ def docs(session: nox.Session) -> None:
         session.run("sphinx-build", "--keep-going", *shared_args)
 
 
-@nox.session
+@nox.session(reuse_venv=True)
 def build_api_docs(session: nox.Session) -> None:
     """
     Build (regenerate) API docs.
@@ -102,7 +102,7 @@ def build_api_docs(session: nox.Session) -> None:
     )
 
 
-@nox.session
+@nox.session(reuse_venv=True)
 def build(session: nox.Session) -> None:
     """
     Build an SDist and wheel.
