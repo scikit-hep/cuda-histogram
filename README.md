@@ -10,7 +10,7 @@
 
 [![PyPI platforms][pypi-platforms]][pypi-link]
 [![PyPI version][pypi-version]][pypi-link]
-[![Conda latest release][conda-version]][conda-link]
+<!-- [![Conda latest release][conda-version]][conda-link] -->
 [![LICENSE][license-badge]][license-link] [![Scikit-HEP][sk-badge]][sk-link]
 
 `cuda-histogram` is a histogram filling package for GPUs. The package tries to
