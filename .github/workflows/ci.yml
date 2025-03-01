@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -51,9 +51,7 @@ jobs:
           allow-prereleases: true
 
       - name: Test package and generate coverage report
-        run:
-          pipx run nox -s coverage-${{ matrix.python-version.key ||
-          matrix.python-version }} --verbose
+        run: pipx run nox -s coverage-${{ matrix.python-version }} --verbose
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v5.3.1

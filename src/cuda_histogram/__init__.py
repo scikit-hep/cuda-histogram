@@ -9,9 +9,8 @@ The package follows `UHI <https://uhi.readthedocs.io>`__ and keeps its API simil
 from __future__ import annotations
 
 from cuda_histogram import axis
+from cuda_histogram._version import version as __version__
 from cuda_histogram.hist import Hist
-
-from ._version import version as __version__
 
 __all__: list[str] = [
     "Hist",
