@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## Version 0.1.1
+
+- feat: python 3.13 support [#30][]
+- feat: now available on conda-forge [#31][]
+
+[#31]: https://github.com/scikit-hep/cuda-histogram/pull/31
+[#30]: https://github.com/scikit-hep/cuda-histogram/pull/30
+
 ## Version 0.1.0
 
 Updated documentation and a huge refactor to match the API style of Scikit-HEP
