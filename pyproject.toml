@@ -84,7 +84,7 @@ filterwarnings = [
   "ignore::RuntimeWarning",
   "ignore::DeprecationWarning",
 ]
-log_cli_level = "INFO"
+log_level = "INFO"
 testpaths = [
   "tests",
 ]
