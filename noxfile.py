@@ -7,7 +7,7 @@ from pathlib import Path
 import nox
 
 DIR = Path(__file__).parent.resolve()
-ALL_PYTHON = ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+ALL_PYTHON = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 nox.needs_version = ">=2024.3.2"
 nox.options.sessions = ["lint", "tests"]
