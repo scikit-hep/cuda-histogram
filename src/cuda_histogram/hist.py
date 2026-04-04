@@ -140,11 +140,11 @@ class Hist:
     # TODO: should allow better indexing (UHI)
     def __getitem__(self, keys):
         if isinstance(keys, slice) and not all(
-            isinstance(s, (int, float)) or s is None
+            isinstance(s, int | float) or s is None
             for s in [keys.start, keys.stop, keys.step]
         ):
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
-        if not isinstance(keys, slice) and not isinstance(keys, (int, float, tuple)):
+        if not isinstance(keys, slice) and not isinstance(keys, int | float | tuple):
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
         if not isinstance(keys, tuple):
             keys = (keys,)
@@ -161,7 +161,7 @@ class Hist:
         sparse_idx = []
         dense_idx = []
         new_dims = []
-        for s, ax in zip(keys, self._axes):
+        for s, ax in zip(keys, self._axes, strict=False):
             if isinstance(ax, SparseAxis):
                 sparse_idx.append(ax._ireduce(s))
                 new_dims.append(ax)
@@ -180,7 +180,9 @@ class Hist:
         if self._sumw2 is not None:
             out._init_sumw2()
         for sparse_key in self._sumw:
-            if not all(k in idx for k, idx in zip(sparse_key, sparse_idx)):
+            if not all(
+                k in idx for k, idx in zip(sparse_key, sparse_idx, strict=False)
+            ):
                 continue
             if sparse_key in out._sumw:
                 out._sumw[sparse_key] += dense_op(self._sumw[sparse_key])
@@ -203,7 +205,7 @@ class Hist:
             weight : cupy.ndarray
                 Provide weights.
         """
-        if not all(isinstance(a, (cupy.ndarray, str)) for a in args):
+        if not all(isinstance(a, cupy.ndarray | str) for a in args):
             raise TypeError("pass CuPy arrays")
         if weight is not None and not isinstance(weight, cupy.ndarray):
             raise TypeError("pass CuPy arrays")
@@ -216,7 +218,7 @@ class Hist:
 
         sparse_key = tuple(
             d.index(value)
-            for d, value in zip(self._axes, args)
+            for d, value in zip(self._axes, args, strict=False)
             if isinstance(d, SparseAxis)
         )
 
@@ -232,7 +234,7 @@ class Hist:
         if self.dense_dim() > 0:
             dense_indices = tuple(
                 cupy.asarray(d.index(value))
-                for d, value in zip(self._axes, args)
+                for d, value in zip(self._axes, args, strict=False)
                 if isinstance(d, DenseAxis)
             )
             xy = cupy.atleast_1d(

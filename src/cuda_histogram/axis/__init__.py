@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools
 import numbers
 import warnings
-from typing import Iterable
+from collections.abc import Iterable
 
 import awkward
 import cupy
@@ -414,7 +414,7 @@ class Bin(DenseAxis):
 
     def __init__(self, n_or_arr, lo=None, hi=None, *, name="", label=""):
         self._lazy_intervals = None
-        if isinstance(n_or_arr, (list, np.ndarray, cupy.ndarray)):
+        if isinstance(n_or_arr, list | np.ndarray | cupy.ndarray):
             self._uniform = False
             self._bins = cupy.array(n_or_arr, dtype="d")
             if not all(np.sort(self._bins) == self._bins):
@@ -454,7 +454,10 @@ class Bin(DenseAxis):
             self._lazy_intervals = [
                 Interval(low, high, bin)
                 for low, high, bin in zip(
-                    self._interval_bins[:-1], self._interval_bins[1:], self._bin_names
+                    self._interval_bins[:-1],
+                    self._interval_bins[1:],
+                    self._bin_names,
+                    strict=False,
                 )
             ]
         return self._lazy_intervals
@@ -485,7 +488,7 @@ class Bin(DenseAxis):
         The integer range includes flow bins: ``0 = underflow, n+1 = overflow, n+2 = nanflow``
         """
         isarray = isinstance(
-            identifier, (awkward.Array, cupy.ndarray, np.ndarray, list)
+            identifier, awkward.Array | cupy.ndarray | np.ndarray | list
         )
         if isarray or isinstance(identifier, numbers.Number):
             identifier = awkward.to_cupy(identifier)  # cupy.asarray(identifier)
@@ -506,7 +509,7 @@ class Bin(DenseAxis):
                         self._bins + 1,
                     )
 
-                if isinstance(idx, (cupy.ndarray, np.ndarray)):
+                if isinstance(idx, cupy.ndarray | np.ndarray):
                     _replace_nans(
                         self.size - 1,
                         idx if idx.dtype.kind == "f" else idx.astype(cupy.float32),
@@ -630,7 +633,7 @@ class Bin(DenseAxis):
         """Number of bins"""
         return (
             self._bins
-            if isinstance(self._bins, (int, np.integer, cupy.integer))
+            if isinstance(self._bins, int | np.integer | cupy.integer)
             else len(self._bins)
         )
 
