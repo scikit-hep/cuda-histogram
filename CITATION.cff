@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use cuda-histogram in published work, please cite it using these metadata."
+title: "cuda-histogram"
+abstract: "cuda-histogram provides histogram filling tools for GPUs, following the Unified Histogram Interface and keeping its API similar to boost-histogram and hist."
+type: software
+authors:
+  - family-names: Gray
+    given-names: Lindsey
+  - family-names: Chopra
+    given-names: Saransh
+  - family-names: Pivarski
+    given-names: Jim
+keywords:
+  - cuda
+  - gpu
+  - histograms
+  - python
+  - scientific-computing
+  - scikit-hep
+license: BSD-3-Clause
+repository-code: https://github.com/scikit-hep/cuda-histogram
+url: https://cuda-histogram.readthedocs.io/
