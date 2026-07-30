@@ -174,6 +174,32 @@ def test_bin_validation():
         cuda_histogram.axis.Variable([0, 1, 1, 2])
 
 
+@pytest.mark.parametrize("weighted_first", [False, True])
+def test_mixed_weighted_unweighted_fill(weighted_first):
+    x = cp.array([0.15, 0.25, 0.25, 0.35])
+    w = cp.array([2.0, 3.0, 4.0, 5.0])
+
+    h = cuda_histogram.Hist(cuda_histogram.axis.Regular(4, 0, 1, name="x"))
+    if weighted_first:
+        h.fill(x, weight=w)
+        assert (h.variance() == cp.array([4.0, 50.0, 0.0, 0.0])).all()
+        h.fill(x)
+    else:
+        h.fill(x)
+        assert h.variance() is None
+        h.fill(x, weight=w)
+
+    # an unweighted entry contributes 1 to the variance
+    assert (h.values() == cp.array([3.0, 15.0, 0.0, 0.0])).all()
+    assert (h.variance() == cp.array([5.0, 53.0, 0.0, 0.0])).all()
+
+
+def test_fill_integer_array():
+    h = cuda_histogram.Hist(cuda_histogram.axis.Regular(4, 0, 8, name="x"))
+    h.fill(cp.array([1, 3, 3, 5]))
+    assert (h.values() == cp.array([1.0, 2.0, 1.0, 0.0])).all()
+
+
 def test_cpu_conversion():
     import boost_histogram as bh
 

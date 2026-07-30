@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections import namedtuple
 
 import cupy
@@ -239,25 +240,22 @@ class Hist:
             xy = cupy.atleast_1d(
                 cupy.ravel_multi_index(dense_indices, self._dense_shape)
             )
+            minlength = math.prod(self._dense_shape)
+
+            def binned(weights):
+                return cupy.bincount(xy, weights=weights, minlength=minlength).reshape(
+                    self._dense_shape
+                )
+
             if weight is not None:
-                self._sumw[sparse_key][:] += cupy.bincount(
-                    xy, weights=weight, minlength=np.array(self._dense_shape).prod()
-                ).reshape(self._dense_shape)
-                self._sumw2[sparse_key][:] += cupy.bincount(
-                    xy,
-                    weights=weight**2,
-                    minlength=np.array(self._dense_shape).prod(),
-                ).reshape(self._dense_shape)
+                self._sumw[sparse_key] += binned(weight)
+                self._sumw2[sparse_key] += binned(weight**2)
             else:
-                self._sumw[sparse_key][:] += cupy.bincount(
-                    xy, weights=None, minlength=np.array(self._dense_shape).prod()
-                ).reshape(self._dense_shape)
+                # counts are the same for both, so only compute them once
+                counts = binned(None)
+                self._sumw[sparse_key] += counts
                 if self._sumw2 is not None:
-                    self._sumw2[sparse_key][:] += cupy.bincount(
-                        xy,
-                        weights=None,
-                        minlength=np.array(self._dense_shape).prod(),
-                    ).reshape(self._dense_shape)
+                    self._sumw2[sparse_key] += counts
         elif weight is not None:
             self._sumw[sparse_key] += cupy.sum(weight)
             self._sumw2[sparse_key] += cupy.sum(weight**2)
