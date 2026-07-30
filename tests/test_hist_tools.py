@@ -200,6 +200,18 @@ def test_fill_integer_array():
     assert (h.values() == cp.array([1.0, 2.0, 1.0, 0.0])).all()
 
 
+def test_fill_integer_array_fractional_bounds():
+    ax = cuda_histogram.axis.Regular(4, 0.5, 8.5)
+    assert (ax.index(cp.array([0, 1, 8, 9])) == cp.array([0, 1, 4, 5])).all()
+    assert (
+        ax.index(cp.array([0, 1, 8, 9])) == ax.index(cp.array([0.0, 1.0, 8.0, 9.0]))
+    ).all()
+
+    h = cuda_histogram.Hist(cuda_histogram.axis.Regular(4, 0.5, 8.5, name="x"))
+    h.fill(cp.array([0, 1, 8, 9]))
+    assert (h.values(flow=True) == cp.array([1.0, 1, 0, 0, 1, 1, 0])).all()
+
+
 def test_cpu_conversion():
     import boost_histogram as bh
 

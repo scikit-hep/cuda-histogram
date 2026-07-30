@@ -18,14 +18,16 @@ __all__: list[str] = [
     "Bin",
 ]
 
-_replace_nans = cupy.ElementwiseKernel("T v", "T x", "x = isnan(x)?v:x", "replace_nans")
-
+# bounds are float64 so integer input does not truncate them; NaN maps to nanflow
 _clip_bins = cupy.ElementwiseKernel(
-    "T Nbins, T lo, T hi, T id",
-    "T idx",
+    "float64 nbins, float64 lo, float64 hi, T x",
+    "int64 idx",
     """
-    const T floored = floor((id - lo) * float(Nbins) / (hi - lo)) + 1;
-    idx = floored < 0 ? 0 : (floored > Nbins ? Nbins + 1 : floored);
+    const double floored = floor((x - lo) * nbins / (hi - lo)) + 1;
+    idx = isnan(floored)    ? (long long)nbins + 2
+          : floored < 0     ? 0
+          : floored > nbins ? (long long)nbins + 1
+                            : (long long)floored;
     """,
     "clip_bins",
 )
@@ -495,32 +497,7 @@ class Bin(DenseAxis):
         if isarray or isinstance(identifier, numbers.Number):
             identifier = awkward.to_cupy(identifier)  # cupy.asarray(identifier)
             if self._uniform:
-                idx = None
-                if isarray:
-                    idx = cupy.empty_like(identifier)
-                    _clip_bins(float(self._bins), self._lo, self._hi, identifier, idx)
-                else:
-                    idx = np.clip(
-                        np.floor(
-                            (identifier - self._lo)
-                            * float(self._bins)
-                            / (self._hi - self._lo)
-                        )
-                        + 1,
-                        0,
-                        self._bins + 1,
-                    )
-
-                if isinstance(idx, cupy.ndarray | np.ndarray):
-                    # integer input cannot hold NaN, and the kernel is in-place
-                    if idx.dtype.kind == "f":
-                        _replace_nans(self._nanflow_index, idx)
-                    idx = idx.astype(int)
-                elif np.isnan(idx):
-                    idx = self._nanflow_index
-                else:
-                    idx = int(idx)
-                return idx
+                return _clip_bins(self._bins, self._lo, self._hi, identifier)
             else:
                 return cupy.searchsorted(self._bins, identifier, side="right")
         elif isinstance(identifier, Interval):
