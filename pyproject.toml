@@ -38,7 +38,6 @@ dependencies = [
   "cupy-cuda12x>=13.1.0",
   "awkward>=2.6.3",
   "numpy>=1.22.0",
-  "scipy>=1.1.0",
   "hist>=2",
   "boost-histogram",
 ]
@@ -47,7 +46,6 @@ dev = [
   "pre-commit",
   "pytest>=6",
   "pytest-cov>=3",
-  "pytest-mpl",
 ]
 docs = [
   "sphinx>=7.0",

@@ -68,11 +68,7 @@ class Interval:
             return self._label
         if self.nan():
             return "(nanflow)"
-        return "{}{}, {})".format(
-            "(" if self._lo == -np.inf else "[",
-            self._lo,
-            self._hi,
-        )
+        return f"{'(' if self._lo == -np.inf else '['}{self._lo}, {self._hi})"
 
     def __hash__(self):
         return hash((self._lo, self._hi))
@@ -95,9 +91,7 @@ class Interval:
             return False
         if other.nan() and self.nan():
             return True
-        if self._lo == other._lo and self._hi == other._hi:  # noqa: SIM103
-            return True
-        return False
+        return self._lo == other._lo and self._hi == other._hi
 
     def nan(self):
         return np.isnan(self._hi)
@@ -222,7 +216,7 @@ class Axis:
             return True
         elif isinstance(other, str):
             # Convenient for testing axis in list by name
-            return not self._name != other
+            return self._name == other
         raise TypeError(f"Cannot compare an Axis with a {other!r}")
 
 
@@ -545,11 +539,9 @@ class Bin(DenseAxis):
                 return False
             if self._uniform != other._uniform:
                 return False
-            if self._uniform and self._bins != other._bins:
-                return False
-            if not self._uniform and not all(self._bins == other._bins):  # noqa: SIM103
-                return False
-            return True
+            if self._uniform:
+                return self._bins == other._bins
+            return all(self._bins == other._bins)
         return super().__eq__(other)
 
     def __getitem__(self, index):
@@ -733,9 +725,6 @@ class Regular(Bin):
             hi = self._lo + (islice.stop - 1) * (self._hi - self._lo) / self._bins
             ihi = islice.stop - 1
         bins = ihi - ilo
-        # TODO: remove this once satisfied it works
-        rbins = (hi - lo) * self._bins / (self._hi - self._lo)
-        assert abs(bins - rbins) < 1e-14, "%d %f %r" % (bins, rbins, self)
         return Regular(bins, lo, hi, name=self._name, label=self._label)
 
 

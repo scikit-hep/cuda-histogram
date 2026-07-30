@@ -90,10 +90,7 @@ class Hist:
         self._sumw2 = None
 
     def __repr__(self):
-        repr_str = "Hist("
-        for ax in self._axes:
-            repr_str += f"{ax!r}, "
-        return f"{repr_str[:-2]})"
+        return f"Hist({', '.join(map(repr, self._axes))})"
 
     @property
     def label(self):
@@ -133,9 +130,7 @@ class Hist:
         return self.sparse_axes().index(axis)
 
     def _init_sumw2(self):
-        self._sumw2 = {}
-        for key in self._sumw:
-            self._sumw2[key] = self._sumw[key].copy()
+        self._sumw2 = {key: value.copy() for key, value in self._sumw.items()}
 
     # TODO: should allow better indexing (UHI)
     def __getitem__(self, keys):
@@ -297,7 +292,7 @@ class Hist:
 
         return (
             self._view_dim(cupy.zeros(shape=self._dense_shape), flow)
-            if self._sumw == {}
+            if not self._sumw
             else self._view_dim(next(iter(self._sumw.values())), flow)
         )
 
