@@ -50,7 +50,7 @@ as well as on [conda](https://anaconda.org/conda-forge/cuda_histogram). The
 library can be installed using `pip` -
 
 ```
-pip install cuda-histogram
+pip install cuda-histogram[cuda13x]
 ```
 
 or using `conda` -
@@ -58,6 +58,10 @@ or using `conda` -
 ```
 conda install -c conda-forge cuda_histogram
 ```
+
+The `cuda13x` extra pulls in `cupy-cuda13x` (CUDA 13); use `cuda12x` instead if
+you have CUDA 12. Installing without an extra leaves CuPy to you, which is what
+you want if you already have a CuPy build (from conda or built from source).
 
 ## Usage
 
