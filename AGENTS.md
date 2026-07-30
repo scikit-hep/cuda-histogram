@@ -19,7 +19,8 @@ sphinx-apidoc).
 Dev/test/docs dependencies live in PEP 735 `[dependency-groups]` (`test`,
 `docs`, `dev` includes `test`); nox resolves them via
 `nox.project.dependency_groups`. Extras are reserved for public, user-facing
-options and there are currently none.
+options: `cuda12x` and `cuda13x` select the matching CuPy wheel, and they
+conflict, so select exactly one.
 
 ## Testing reality
 
@@ -28,6 +29,11 @@ entirely there (`pytest.importorskip("cupy")` plus a `getDeviceCount` check).
 `tests/test_dummy.py` exists only so pytest doesn't fail on an empty collection.
 Real coverage only happens on a CUDA machine — run the suite locally before
 claiming a change works.
+
+`.github/workflows/gpu.yml` runs the full suite on the scikit-hep self-hosted
+runners (nightly, on pushes to `main`, and on demand), matrixed over CUDA 12
+and 13. It gets CuPy from conda-forge with micromamba, so it installs the
+package without a `cuda12x`/`cuda13x` extra.
 
 `filterwarnings = ["error", ...]` in `pyproject.toml`, so unexpected warnings
 fail tests. mypy is configured strict but its pre-commit hook is commented out,
