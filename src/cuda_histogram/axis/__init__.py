@@ -4,6 +4,7 @@ import functools
 import numbers
 import warnings
 from collections.abc import Iterable
+from typing import Any
 
 import awkward
 import cupy
@@ -33,7 +34,7 @@ _clip_bins = cupy.ElementwiseKernel(
 )
 
 
-def _overflow_behavior(overflow: bool):
+def _overflow_behavior(overflow: bool) -> slice:
     if not overflow:
         return slice(1, -2)
     else:
@@ -56,25 +57,25 @@ class Interval:
             Bin upper bound, exclusive
     """
 
-    def __init__(self, lo, hi, label=None):
+    def __init__(self, lo: float, hi: float, label: str | None = None) -> None:
         self._lo = float(lo)
         self._hi = float(hi)
         self._label = label
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<{self.__class__.__name__} ({self!s}) instance at 0x{id(self):0x}>"
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self._label is not None:
             return self._label
         if self.nan():
             return "(nanflow)"
         return f"{'(' if self._lo == -np.inf else '['}{self._lo}, {self._hi})"
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self._lo, self._hi))
 
-    def __lt__(self, other):
+    def __lt__(self, other: Interval) -> bool:
         if other.nan() and not self.nan():
             return True
         elif self.nan():
@@ -87,38 +88,38 @@ class Interval:
             return True
         return False
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Interval):
             return False
         if other.nan() and self.nan():
             return True
         return self._lo == other._lo and self._hi == other._hi
 
-    def nan(self):
-        return np.isnan(self._hi)
+    def nan(self) -> bool:
+        return bool(np.isnan(self._hi))
 
     @property
-    def lo(self):
+    def lo(self) -> float:
         """Lower boundary of this bin, inclusive"""
         return self._lo
 
     @property
-    def hi(self):
+    def hi(self) -> float:
         """Upper boundary of this bin, exclusive"""
         return self._hi
 
     @property
-    def mid(self):
+    def mid(self) -> float:
         """Midpoint of this bin"""
         return (self._hi + self._lo) / 2
 
     @property
-    def label(self):
+    def label(self) -> str | None:
         """Label of this bin, mutable"""
         return self._label
 
     @label.setter
-    def label(self, lbl):
+    def label(self, lbl: str | None) -> None:
         self._label = lbl
 
 
@@ -190,28 +191,28 @@ class Axis:
     Derived classes should implement, at least, an equality override
     """
 
-    def __init__(self, name, label):
+    def __init__(self, name: str, label: str) -> None:
         self._name = name
         self._label = label
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<{self.__class__.__name__} (name={self._name}) instance at 0x{id(self):0x}>"
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @property
-    def label(self):
+    def label(self) -> str:
         return self._label
 
     @label.setter
-    def label(self, label):
+    def label(self, label: str) -> None:
         self._label = label
 
-    __hash__ = None  # mutable label, and __eq__ also accepts str
+    __hash__ = None  # type: ignore[assignment]  # mutable label, and __eq__ also accepts str
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, Axis):
             if self._name != other._name:  # noqa: SIM103
                 return False
@@ -242,6 +243,12 @@ class SparseAxis(Axis):
     may be useful if the size of the tuple of identifiers in a
     sparse-binned histogram becomes too large
     """
+
+    def index(self, identifier: Any) -> Any:
+        raise NotImplementedError
+
+    def _ireduce(self, the_slice: Any) -> Any:
+        raise NotImplementedError
 
 
 # TODO: cleanup logic for sparse axis
@@ -384,6 +391,20 @@ class DenseAxis(Axis):
         **reduced(islice)** - return a new axis with binning corresponding to the index slice (from _ireduce)
     """
 
+    def index(self, identifier: Any) -> Any:
+        raise NotImplementedError
+
+    def _ireduce(self, the_slice: Any) -> slice:
+        raise NotImplementedError
+
+    def reduced(self, islice: slice) -> DenseAxis:
+        raise NotImplementedError
+
+    @property
+    def size(self) -> int:
+        """Number of bins"""
+        raise NotImplementedError
+
 
 class Bin(DenseAxis):
     """Super class for dense axes.
@@ -409,8 +430,20 @@ class Bin(DenseAxis):
     Bin boundaries are [lo, hi)
     """
 
-    def __init__(self, n_or_arr, lo=None, hi=None, *, name="", label=""):
-        self._lazy_intervals = None
+    def __init__(
+        self,
+        n_or_arr: Any,
+        lo: float | None = None,
+        hi: float | None = None,
+        *,
+        name: str = "",
+        label: str = "",
+    ) -> None:
+        # _bins is the number of bins when uniform, else the array of edges
+        self._bins: Any
+        self._lo: Any
+        self._hi: Any
+        self._lazy_intervals: list[Interval] | None = None
         if isinstance(n_or_arr, list | np.ndarray | cupy.ndarray):
             self._uniform = False
             self._bins = cupy.array(n_or_arr, dtype="d")
@@ -442,11 +475,11 @@ class Bin(DenseAxis):
         self._name = name
 
     @property
-    def _nanflow_index(self):
+    def _nanflow_index(self) -> int:
         """Dense index of the nanflow bin (``n+2``)"""
-        return self._bins + 2 if self._uniform else len(self._bins)
+        return int(self._bins) + 2 if self._uniform else len(self._bins)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return (
             f"{class_name}({self._bins[:-1]})"
@@ -455,7 +488,7 @@ class Bin(DenseAxis):
         )
 
     @property
-    def _intervals(self):
+    def _intervals(self) -> list[Interval]:
         if not hasattr(self, "_lazy_intervals") or self._lazy_intervals is None:
             self._lazy_intervals = [
                 Interval(low, high, bin)
@@ -468,7 +501,7 @@ class Bin(DenseAxis):
             ]
         return self._lazy_intervals
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict[str, Any]:
         if hasattr(self, "_lazy_intervals") and self._lazy_intervals is not None:
             self._bin_names = np.array(
                 [interval.label for interval in self._lazy_intervals]
@@ -476,12 +509,12 @@ class Bin(DenseAxis):
         self.__dict__.pop("_lazy_intervals", None)
         return self.__dict__
 
-    def __setstate__(self, d):
+    def __setstate__(self, d: dict[str, Any]) -> None:
         if "_interval_bins" in d and "_bin_names" not in d:
             d["_bin_names"] = np.full(d["_interval_bins"][:-1].size, None)
         self.__dict__ = d
 
-    def index(self, identifier):
+    def index(self, identifier: Any) -> Any:
         """Index of a identifier or label
 
         Parameters
@@ -519,23 +552,23 @@ class Bin(DenseAxis):
             )
         raise TypeError("Request bin indices with a identifier or 1-D array only")
 
-    __hash__ = None
+    __hash__ = None  # type: ignore[assignment]
 
-    def __eq__(self, other):
-        if isinstance(other, DenseAxis):
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Bin):
             if not super().__eq__(other):
                 return False
             if self._uniform != other._uniform:
                 return False
             if self._uniform:
-                return self._bins == other._bins
-            return all(self._bins == other._bins)
+                return bool(self._bins == other._bins)
+            return bool(all(self._bins == other._bins))
         return super().__eq__(other)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> Interval:
         return self._intervals[index]
 
-    def _ireduce(self, the_slice):
+    def _ireduce(self, the_slice: Any) -> slice:
         if isinstance(the_slice, numbers.Number):
             the_slice = slice(the_slice, the_slice)
         elif isinstance(the_slice, Interval):
@@ -609,15 +642,15 @@ class Bin(DenseAxis):
         raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
 
     @property
-    def size(self):
+    def size(self) -> int:
         """Number of bins"""
         return (
-            self._bins
+            int(self._bins)
             if isinstance(self._bins, int | np.integer | cupy.integer)
             else len(self._bins)
         )
 
-    def edges(self, flow=False):
+    def edges(self, flow: bool = False) -> Any:
         """Bin boundaries
 
         Parameters
@@ -633,7 +666,7 @@ class Bin(DenseAxis):
         ]
         return out[_overflow_behavior(flow)]
 
-    def centers(self, flow=False):
+    def centers(self, flow: bool = False) -> Any:
         """Bin centers
 
         Parameters
@@ -643,7 +676,7 @@ class Bin(DenseAxis):
         edges = self.edges(flow)
         return (edges[:-1] + edges[1:]) / 2
 
-    def identifiers(self, flow=False):
+    def identifiers(self, flow: bool = False) -> list[Interval]:
         """List of `Interval` identifiers"""
         return self._intervals[_overflow_behavior(flow)]
 
@@ -684,7 +717,7 @@ class Regular(Bin):
             label=label,
         )
 
-    def reduced(self, islice):
+    def reduced(self, islice: slice) -> Regular:
         """
         Return a new axis with reduced binning
         The new binning corresponds to the slice made on this axis.
@@ -740,7 +773,7 @@ class Variable(Bin):
     ) -> None:
         super().__init__(edges, name=name, label=label)
 
-    def reduced(self, islice):
+    def reduced(self, islice: slice) -> Variable:
         """
         Return a new axis with reduced binning
         The new binning corresponds to the slice made on this axis.

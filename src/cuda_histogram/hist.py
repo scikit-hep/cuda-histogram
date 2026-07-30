@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from collections import namedtuple
+import typing
+from typing import Any
 
 import cupy
 import numpy as np
@@ -16,12 +17,24 @@ from cuda_histogram.axis import (
     _overflow_behavior,
 )
 
+if typing.TYPE_CHECKING:
+    import boost_histogram
+    import hist as hist_module
+
 __all__: list[str] = ["Hist"]
 
-_MaybeSumSlice = namedtuple("_MaybeSumSlice", ["start", "stop", "sum"])
+
+class _MaybeSumSlice(typing.NamedTuple):
+    start: int | None
+    stop: int | None
+    sum: bool
 
 
-def _assemble_blocks(array, ndslice, depth=0):
+# tuple of sparse-axis indices, empty while sparse axes are disabled
+_SparseKey = tuple[Any, ...]
+
+
+def _assemble_blocks(array: Any, ndslice: list[Any], depth: int = 0) -> Any:
     """
     Turns an n-dimensional slice of array (tuple of slices)
     into a nested list of numpy arrays that can be passed to np.block()
@@ -68,7 +81,7 @@ class Hist:
 
     def __init__(
         self,
-        *axes,
+        *axes: Axis,
         label: str | None = None,
         name: str | None = None,
     ) -> None:
@@ -86,55 +99,55 @@ class Hist:
                 if isinstance(ax, DenseAxis)
             ]
         )
-        self._sumw = {}
+        self._sumw: dict[_SparseKey, Any] = {}
         # Storage of sumw2 starts at first use of weight keyword in fill()
-        self._sumw2 = None
+        self._sumw2: dict[_SparseKey, Any] | None = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Hist({', '.join(map(repr, self._axes))})"
 
     @property
-    def label(self):
+    def label(self) -> str | None:
         """A label describing the meaning of the sum of weights"""
         return self._label
 
     @label.setter
-    def label(self, label):
+    def label(self, label: str | None) -> None:
         self._label = label
 
     @property
-    def name(self):
+    def name(self) -> str | None:
         """A label describing the meaning of the sum of weights"""
         return self._name
 
     @name.setter
-    def name(self, name):
+    def name(self, name: str | None) -> None:
         self._name = name
 
-    def axes(self):
+    def axes(self) -> tuple[Axis, ...]:
         """Get all axes in this histogram"""
         return self._axes
 
-    def dim(self):
+    def dim(self) -> int:
         """Dimension of this histogram (number of axes)"""
         return len(self._axes)
 
-    def dense_dim(self):
+    def dense_dim(self) -> int:
         """Dense dimension of this histogram (number of non-sparse axes)"""
         return len(self._dense_shape)
 
-    def sparse_axes(self):
+    def sparse_axes(self) -> list[SparseAxis]:
         """All sparse axes"""
         return [ax for ax in self._axes if isinstance(ax, SparseAxis)]
 
-    def _isparse(self, axis):
+    def _isparse(self, axis: SparseAxis) -> int:
         return self.sparse_axes().index(axis)
 
-    def _init_sumw2(self):
+    def _init_sumw2(self) -> None:
         self._sumw2 = {key: value.copy() for key, value in self._sumw.items()}
 
     # TODO: should allow better indexing (UHI)
-    def __getitem__(self, keys):
+    def __getitem__(self, keys: Any) -> Hist:
         if isinstance(keys, slice) and not all(
             isinstance(s, int | float) or s is None
             for s in [keys.start, keys.stop, keys.step]
@@ -160,18 +173,18 @@ class Hist:
             raise IndexError("too many indices for this histogram")
         sparse_idx = []
         dense_idx = []
-        new_dims = []
+        new_dims: list[Axis] = []
         for s, ax in zip(keys, self._axes, strict=False):
             if isinstance(ax, SparseAxis):
                 sparse_idx.append(ax._ireduce(s))
                 new_dims.append(ax)
             else:
+                assert isinstance(ax, DenseAxis)
                 islice = ax._ireduce(s)
                 dense_idx.append(islice)
                 new_dims.append(ax.reduced(islice))
-        dense_idx = tuple(dense_idx)
 
-        def dense_op(array):
+        def dense_op(array: Any) -> Any:
             as_numpy = array.get()
             blocked = np.block(_assemble_blocks(as_numpy, dense_idx))
             return cupy.asarray(blocked)
@@ -184,17 +197,20 @@ class Hist:
                 k in idx for k, idx in zip(sparse_key, sparse_idx, strict=False)
             ):
                 continue
-            if sparse_key in out._sumw:
+            existing = sparse_key in out._sumw
+            if existing:
                 out._sumw[sparse_key] += dense_op(self._sumw[sparse_key])
-                if self._sumw2 is not None:
-                    out._sumw2[sparse_key] += dense_op(self._sumw2[sparse_key])
             else:
                 out._sumw[sparse_key] = dense_op(self._sumw[sparse_key]).copy()
-                if self._sumw2 is not None:
+            if self._sumw2 is not None:
+                assert out._sumw2 is not None
+                if existing:
+                    out._sumw2[sparse_key] += dense_op(self._sumw2[sparse_key])
+                else:
                     out._sumw2[sparse_key] = dense_op(self._sumw2[sparse_key]).copy()
         return out
 
-    def fill(self, *args, weight=None):
+    def fill(self, *args: Any, weight: Any = None) -> None:
         """
         Insert data into the histogram.
 
@@ -242,12 +258,14 @@ class Hist:
             )
             minlength = math.prod(self._dense_shape)
 
-            def binned(weights):
+            def binned(weights: Any) -> Any:
                 return cupy.bincount(xy, weights=weights, minlength=minlength).reshape(
                     self._dense_shape
                 )
 
             if weight is not None:
+                # weights always seed _sumw2 above
+                assert self._sumw2 is not None
                 self._sumw[sparse_key] += binned(weight)
                 self._sumw2[sparse_key] += binned(weight**2)
             else:
@@ -257,6 +275,7 @@ class Hist:
                 if self._sumw2 is not None:
                     self._sumw2[sparse_key] += counts
         elif weight is not None:
+            assert self._sumw2 is not None
             self._sumw[sparse_key] += cupy.sum(weight)
             self._sumw2[sparse_key] += cupy.sum(weight**2)
         else:
@@ -264,13 +283,13 @@ class Hist:
             if self._sumw2 is not None:
                 self._sumw2[sparse_key] += 1.0
 
-    def _view_dim(self, arr, flow):
+    def _view_dim(self, arr: Any, flow: bool) -> Any:
         if self.dense_dim() == 0:
             return arr
         else:
             return arr[tuple(_overflow_behavior(flow) for _ in range(self.dense_dim()))]
 
-    def values(self, flow=False):
+    def values(self, flow: bool = False) -> Any:
         """Extract the values from this histogram.
 
         Parameters
@@ -298,7 +317,7 @@ class Hist:
             else self._view_dim(next(iter(self._sumw.values())), flow)
         )
 
-    def variance(self, flow=False):
+    def variance(self, flow: bool = False) -> Any:
         """Extract the variances from this histogram.
 
         Parameters
@@ -338,7 +357,7 @@ class Hist:
     #     elif isinstance(axis, DenseAxis):
     #         return axis.identifiers(overflow=overflow)
 
-    def to_boost(self):
+    def to_boost(self) -> boost_histogram.Histogram[Any]:
         """
         Convert this cuda_histogram object to a boost_histogram object.
 
@@ -351,7 +370,7 @@ class Hist:
         import hist  # noqa: PLC0415
 
         # hist's axes subclass boost-histogram's and carry name/label properly
-        newaxes = []
+        newaxes: list[hist.axis.Regular | hist.axis.Variable] = []
         for axis in self.axes():
             if isinstance(axis, Regular):
                 newaxes.append(
@@ -387,13 +406,14 @@ class Hist:
             #     newaxis.bin_labels = [x.label for x in identifiers]
             #     newaxes.append(newaxis)
 
+        storage: boost_histogram.storage.Storage
         if self._sumw2 is None:
             storage = boost_histogram.storage.Double()
         else:
             storage = boost_histogram.storage.Weight()
 
         out = boost_histogram.Histogram(*newaxes, storage=storage)
-        out.label = self.label
+        out.label = self.label  # type: ignore[attr-defined]
 
         view = out.view(flow=True)
         nonan = [slice(None, -1, None)] * (len(newaxes))
@@ -433,7 +453,7 @@ class Hist:
 
         return out
 
-    def to_hist(self):
+    def to_hist(self) -> hist_module.Hist[Any]:
         """Convert this cuda_histogram object to a hist object"""
         import hist  # noqa: PLC0415
 

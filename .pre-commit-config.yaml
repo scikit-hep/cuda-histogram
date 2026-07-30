@@ -47,14 +47,17 @@ repos:
         args: ["--fix"]
       - id: ruff-format
 
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: "v1.9.0"
-  #   hooks:
-  #     - id: mypy
-  #       files: src|tests
-  #       args: []
-  #       additional_dependencies:
-  #         - pytest
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: "v2.3.0"
+    hooks:
+      - id: mypy
+        files: src|tests
+        args: []
+        additional_dependencies:
+          - boost-histogram
+          - hist
+          - numpy
+          - pytest
 
   - repo: https://github.com/codespell-project/codespell
     rev: "v2.4.3"

@@ -59,6 +59,7 @@ docs = [
 ]
 dev = [
   { include-group = "test" },
+  "mypy>=1.11",
 ]
 
 [project.urls]
@@ -102,7 +103,8 @@ report.exclude_also = [
 
 [tool.mypy]
 files = ["src", "tests"]
-python_version = "3.10"
+# NumPy's stubs use PEP 695 syntax, so they cannot be checked below 3.12
+python_version = "3.12"
 warn_unused_configs = true
 strict = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
@@ -114,6 +116,10 @@ disallow_incomplete_defs = false
 module = "cuda_histogram.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = ["awkward.*", "cupy.*"]
+ignore_missing_imports = true
 
 
 [tool.ruff]

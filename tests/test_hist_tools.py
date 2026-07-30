@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -14,7 +16,7 @@ except cp.cuda.runtime.CUDARuntimeError:
     pytest.skip("CUDA not found", allow_module_level=True)
 
 
-def dummy_jagged_eta_pt():
+def dummy_jagged_eta_pt() -> tuple[Any, Any, Any]:
     np.random.seed(42)
     counts = np.random.exponential(2, size=50).astype(int)
     entries = cp.sum(counts)
@@ -25,7 +27,7 @@ def dummy_jagged_eta_pt():
     return (counts, test_eta, test_pt)
 
 
-def test_hist():
+def test_hist() -> None:
     _counts, test_eta, test_pt = dummy_jagged_eta_pt()
 
     h = cuda_histogram.Hist(
@@ -89,6 +91,7 @@ def test_hist():
     assert h.__repr__() == "Hist(Regular(20, 0, 2), Variable([ 0.  5. 15. 30.]))"
     assert list(h._sumw.keys()) == [()]
     assert (next(iter(h._sumw.values())) == h.values(flow=True)).all()
+    assert h._sumw2 is not None
     assert list(h._sumw2.keys()) == [()]
     assert (next(iter(h._sumw2.values())) == h.variance(flow=True)).all()
     assert h.name == "regular joe"
@@ -111,7 +114,7 @@ def test_hist():
     assert (h[:, 0].variance() == h.variance()[:, 0].reshape((20, 1))).all()
 
 
-def test_partial_indexing():
+def test_partial_indexing() -> None:
     _counts, test_eta, test_pt = dummy_jagged_eta_pt()
 
     h = cuda_histogram.Hist(
@@ -134,7 +137,7 @@ def test_partial_indexing():
         h["x"]
 
 
-def test_underflow_index_and_fill():
+def test_underflow_index_and_fill() -> None:
     ax = cuda_histogram.axis.Regular(10, 0, 1)
     assert int(ax.index(cp.array([-5.0]))[0]) == 0
     assert int(ax.index(cp.array([5.0]))[0]) == 11
@@ -146,7 +149,7 @@ def test_underflow_index_and_fill():
     assert int(values.sum()) == 1
 
 
-def test_nanflow_index_and_fill():
+def test_nanflow_index_and_fill() -> None:
     ax = cuda_histogram.axis.Regular(10, 0, 1)
     assert int(ax.index(cp.array([np.nan]))[0]) == 12
     assert int(cp.asarray(ax.index(float("nan"))).reshape(-1)[0]) == 12
@@ -163,11 +166,11 @@ def test_nanflow_index_and_fill():
     assert int(values.sum()) == 1
 
 
-def test_bin_validation():
+def test_bin_validation() -> None:
     with pytest.raises(TypeError):
         cuda_histogram.axis.Bin(3.5, 0, 1)
     with pytest.raises(TypeError):
-        cuda_histogram.axis.Regular(3.5, 0, 1)
+        cuda_histogram.axis.Regular(3.5, 0, 1)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="not sorted"):
         cuda_histogram.axis.Variable([0, 2, 1])
     with pytest.raises(ValueError, match="not sorted"):
@@ -175,7 +178,7 @@ def test_bin_validation():
 
 
 @pytest.mark.parametrize("weighted_first", [False, True])
-def test_mixed_weighted_unweighted_fill(weighted_first):
+def test_mixed_weighted_unweighted_fill(weighted_first: bool) -> None:
     x = cp.array([0.15, 0.25, 0.25, 0.35])
     w = cp.array([2.0, 3.0, 4.0, 5.0])
 
@@ -194,13 +197,13 @@ def test_mixed_weighted_unweighted_fill(weighted_first):
     assert (h.variance() == cp.array([5.0, 53.0, 0.0, 0.0])).all()
 
 
-def test_fill_integer_array():
+def test_fill_integer_array() -> None:
     h = cuda_histogram.Hist(cuda_histogram.axis.Regular(4, 0, 8, name="x"))
     h.fill(cp.array([1, 3, 3, 5]))
     assert (h.values() == cp.array([1.0, 2.0, 1.0, 0.0])).all()
 
 
-def test_fill_integer_array_fractional_bounds():
+def test_fill_integer_array_fractional_bounds() -> None:
     ax = cuda_histogram.axis.Regular(4, 0.5, 8.5)
     assert (ax.index(cp.array([0, 1, 8, 9])) == cp.array([0, 1, 4, 5])).all()
     assert (
@@ -212,7 +215,7 @@ def test_fill_integer_array_fractional_bounds():
     assert (h.values(flow=True) == cp.array([1.0, 1, 0, 0, 1, 1, 0])).all()
 
 
-def test_cpu_conversion():
+def test_cpu_conversion() -> None:
     import boost_histogram as bh
 
     dummy = cuda_histogram.Hist(
@@ -252,14 +255,14 @@ def test_cpu_conversion():
     assert h.axes[0].name == "dummy"
     assert h.axes[0].label == "Number of events"
     assert h.label == "Just Dummy"
-    assert h[0, 0].value == 2.0
-    assert h[0, 0].variance == 4.0
+    assert h[0, 0].value == 2.0  # type: ignore[union-attr]
+    assert h[0, 0].variance == 4.0  # type: ignore[union-attr]
     assert h.values().shape == dummy.values().shape
-    assert h[bh.underflow, bh.underflow].variance == 4.0
+    assert h[bh.underflow, bh.underflow].variance == 4.0  # type: ignore[union-attr]
     assert h.storage_type == bh.storage.Weight
 
 
-def test_hist_conversion():
+def test_hist_conversion() -> None:
     import hist as hist_mod
 
     dummy = cuda_histogram.Hist(
