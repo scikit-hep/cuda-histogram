@@ -8,8 +8,9 @@ import nox
 
 DIR = Path(__file__).parent.resolve()
 ALL_PYTHON = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+PROJECT = nox.project.load_toml("pyproject.toml")
 
-nox.needs_version = ">=2024.3.2"
+nox.needs_version = ">=2025.2.9"
 nox.options.sessions = ["lint", "tests"]
 nox.options.default_venv_backend = "uv|virtualenv"
 
@@ -30,7 +31,7 @@ def tests(session: nox.Session) -> None:
     """
     Run the unit and regular tests.
     """
-    session.install(".[dev]")
+    session.install(".", *nox.project.dependency_groups(PROJECT, "test"))
     session.run("pytest", *session.posargs)
 
 
@@ -59,7 +60,9 @@ def docs(session: nox.Session) -> None:
 
     extra_installs = ["sphinx-autobuild"] if args.serve else []
 
-    session.install("-e.[docs]", *extra_installs)
+    session.install(
+        "-e.", *nox.project.dependency_groups(PROJECT, "docs"), *extra_installs
+    )
     session.chdir("docs")
 
     if args.builder == "linkcheck":

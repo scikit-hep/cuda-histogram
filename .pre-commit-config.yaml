@@ -75,13 +75,13 @@ repos:
         exclude: .pre-commit-config.yaml
 
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: "v0.19"
+    rev: "v0.25"
     hooks:
       - id: validate-pyproject
         additional_dependencies: ["validate-pyproject-schema-store[all]"]
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: "0.29.2"
+    rev: "0.37.4"
     hooks:
       - id: check-dependabot
       - id: check-github-workflows

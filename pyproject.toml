@@ -41,9 +41,8 @@ dependencies = [
   "hist>=2",
   "boost-histogram",
 ]
-[project.optional-dependencies]
-dev = [
-  "pre-commit",
+[dependency-groups]
+test = [
   "pytest>=6",
   "pytest-cov>=3",
 ]
@@ -53,6 +52,9 @@ docs = [
   "sphinx_copybutton",
   "sphinx_autodoc_typehints",
   "furo>=2023.08.17",
+]
+dev = [
+  { include-group = "test" },
 ]
 
 [project.urls]
@@ -65,11 +67,6 @@ Changelog = "https://github.com/scikit-hep/cuda-histogram/releases"
 [tool.hatch]
 version.source = "vcs"
 build.hooks.vcs.version-file = "src/cuda_histogram/_version.py"
-
-[tool.hatch.envs.default]
-features = ["test"]
-scripts.test = "pytest {args}"
-
 
 [tool.pytest.ini_options]
 minversion = "6.0"
