@@ -497,7 +497,7 @@ class Bin(DenseAxis):
             if self._uniform:
                 idx = None
                 if isarray:
-                    idx = cupy.zeros_like(identifier)
+                    idx = cupy.empty_like(identifier)
                     _clip_bins(float(self._bins), self._lo, self._hi, identifier, idx)
                 else:
                     idx = np.clip(
@@ -512,10 +512,9 @@ class Bin(DenseAxis):
                     )
 
                 if isinstance(idx, cupy.ndarray | np.ndarray):
-                    _replace_nans(
-                        self._nanflow_index,
-                        idx if idx.dtype.kind == "f" else idx.astype(cupy.float32),
-                    )
+                    # integer input cannot hold NaN, and the kernel is in-place
+                    if idx.dtype.kind == "f":
+                        _replace_nans(self._nanflow_index, idx)
                     idx = idx.astype(int)
                 elif np.isnan(idx):
                     idx = self._nanflow_index
