@@ -144,20 +144,24 @@ class Hist:
             for s in [keys.start, keys.stop, keys.step]
         ):
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
-        if not isinstance(keys, slice) and not isinstance(keys, int | float | tuple):
+        if (
+            not isinstance(keys, slice)
+            and keys is not Ellipsis
+            and not isinstance(keys, int | float | tuple)
+        ):
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
         if not isinstance(keys, tuple):
             keys = (keys,)
-        if len(keys) != self.dim():
-            raise IndexError("Too many or too less indices for this histogram")
+        if keys.count(Ellipsis) > 1:
+            raise IndexError("an index can only have a single ellipsis ('...')")
+        if Ellipsis in keys:
+            idx = keys.index(Ellipsis)
+            slices = (slice(None),) * (self.dim() - len(keys) + 1)
+            keys = keys[:idx] + slices + keys[idx + 1 :]
         elif len(keys) < self.dim():
-            if Ellipsis in keys:
-                idx = keys.index(Ellipsis)
-                slices = (slice(None),) * (self.dim() - len(keys) + 1)
-                keys = keys[:idx] + slices + keys[idx + 1 :]
-            else:
-                slices = (slice(None),) * (self.dim() - len(keys))
-                keys += slices
+            keys += (slice(None),) * (self.dim() - len(keys))
+        if len(keys) > self.dim():
+            raise IndexError("too many indices for this histogram")
         sparse_idx = []
         dense_idx = []
         new_dims = []
