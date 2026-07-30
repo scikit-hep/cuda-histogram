@@ -134,6 +134,46 @@ def test_partial_indexing():
         h["x"]
 
 
+def test_underflow_index_and_fill():
+    ax = cuda_histogram.axis.Regular(10, 0, 1)
+    assert int(ax.index(cp.array([-5.0]))[0]) == 0
+    assert int(ax.index(cp.array([5.0]))[0]) == 11
+
+    h = cuda_histogram.Hist(cuda_histogram.axis.Regular(10, 0, 1, name="x"))
+    h.fill(cp.array([-5.0]))
+    values = h.values(flow=True)
+    assert int(values[0]) == 1
+    assert int(values.sum()) == 1
+
+
+def test_nanflow_index_and_fill():
+    ax = cuda_histogram.axis.Regular(10, 0, 1)
+    assert int(ax.index(cp.array([np.nan]))[0]) == 12
+    assert int(cp.asarray(ax.index(float("nan"))).reshape(-1)[0]) == 12
+    assert ax.index(cuda_histogram.axis.Interval(3.0, np.nan)) == 12
+
+    axv = cuda_histogram.axis.Variable([0, 1, 2, 3])
+    assert int(axv.index(cp.array([np.nan]))[0]) == 5
+    assert axv.index(cuda_histogram.axis.Interval(3.0, np.nan)) == 5
+
+    h = cuda_histogram.Hist(cuda_histogram.axis.Regular(10, 0, 1, name="x"))
+    h.fill(cp.array([np.nan]))
+    values = h.values(flow=True)
+    assert int(values[-1]) == 1
+    assert int(values.sum()) == 1
+
+
+def test_bin_validation():
+    with pytest.raises(TypeError):
+        cuda_histogram.axis.Bin(3.5, 0, 1)
+    with pytest.raises(TypeError):
+        cuda_histogram.axis.Regular(3.5, 0, 1)
+    with pytest.raises(ValueError, match="not sorted"):
+        cuda_histogram.axis.Variable([0, 2, 1])
+    with pytest.raises(ValueError, match="not sorted"):
+        cuda_histogram.axis.Variable([0, 1, 1, 2])
+
+
 def test_cpu_conversion():
     import boost_histogram as bh
 

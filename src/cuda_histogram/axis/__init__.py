@@ -25,8 +25,7 @@ _clip_bins = cupy.ElementwiseKernel(
     "T idx",
     """
     const T floored = floor((id - lo) * float(Nbins) / (hi - lo)) + 1;
-    idx = floored < 0 ? 0 : floored;
-    idx = floored > Nbins ? Nbins + 1 : floored;
+    idx = floored < 0 ? 0 : (floored > Nbins ? Nbins + 1 : floored);
     """,
     "clip_bins",
 )
@@ -411,7 +410,7 @@ class Bin(DenseAxis):
         if isinstance(n_or_arr, list | np.ndarray | cupy.ndarray):
             self._uniform = False
             self._bins = cupy.array(n_or_arr, dtype="d")
-            if not all(np.sort(self._bins) == self._bins):
+            if not bool((self._bins[:-1] < self._bins[1:]).all()):
                 raise ValueError("Binning not sorted!")
             self._lo = self._bins[0]
             self._hi = self._bins[-1]
@@ -431,8 +430,17 @@ class Bin(DenseAxis):
                 cupy.nan,
             ]
             self._bin_names = np.full(self._interval_bins[:-1].size, None)
+        else:
+            raise TypeError(
+                f"Expected an integer number of bins or an array of bin edges, got {n_or_arr!r}"
+            )
         self._label = label
         self._name = name
+
+    @property
+    def _nanflow_index(self):
+        """Dense index of the nanflow bin (``n+2``)"""
+        return self._bins + 2 if self._uniform else len(self._bins)
 
     def __repr__(self):
         class_name = self.__class__.__name__
@@ -505,12 +513,12 @@ class Bin(DenseAxis):
 
                 if isinstance(idx, cupy.ndarray | np.ndarray):
                     _replace_nans(
-                        self.size - 1,
+                        self._nanflow_index,
                         idx if idx.dtype.kind == "f" else idx.astype(cupy.float32),
                     )
                     idx = idx.astype(int)
                 elif np.isnan(idx):
-                    idx = self.size - 1
+                    idx = self._nanflow_index
                 else:
                     idx = int(idx)
                 return idx
@@ -518,7 +526,7 @@ class Bin(DenseAxis):
                 return cupy.searchsorted(self._bins, identifier, side="right")
         elif isinstance(identifier, Interval):
             if identifier.nan():
-                return self.size - 1
+                return self._nanflow_index
             for idx, interval in enumerate(self._intervals):
                 if (
                     interval._lo <= identifier._lo
