@@ -351,29 +351,33 @@ class Hist:
         All the arguments of cuda-histogram's axis and histogram are passed down.
         """
         import boost_histogram
+        import hist
 
+        # hist's axes subclass boost-histogram's and carry name/label properly
         newaxes = []
         for axis in self.axes():
             if isinstance(axis, Regular):
-                newaxis = boost_histogram.axis.Regular(
-                    axis._bins,
-                    axis._lo,
-                    axis._hi,
-                    underflow=True,
-                    overflow=True,
+                newaxes.append(
+                    hist.axis.Regular(
+                        axis._bins,
+                        axis._lo,
+                        axis._hi,
+                        underflow=True,
+                        overflow=True,
+                        name=axis.name,
+                        label=axis.label,
+                    )
                 )
-                newaxis._ax.metadata["name"] = axis.name
-                newaxis.label = axis.label
-                newaxes.append(newaxis)
             elif isinstance(axis, Variable):
-                newaxis = boost_histogram.axis.Variable(
-                    axis.edges(),
-                    underflow=True,
-                    overflow=True,
+                newaxes.append(
+                    hist.axis.Variable(
+                        axis.edges().get(),
+                        underflow=True,
+                        overflow=True,
+                        name=axis.name,
+                        label=axis.label,
+                    )
                 )
-                newaxis._ax.metadata["name"] = axis.name
-                newaxis.label = axis.label
-                newaxes.append(newaxis)
             # TODO: cleanup logic for sparse axis
             # elif isinstance(axis, Cat):
             #     identifiers = self.identifiers(axis)
