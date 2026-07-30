@@ -159,3 +159,11 @@ Thumbs.db
 
 # Data files
 HZZ.root
+
+# Symlink to AGENTS.md
+CLAUDE.md
+.claude/
+
+# Locks
+uv.lock
+*pylock*
