@@ -179,3 +179,24 @@ def test_cpu_conversion():
     assert h.values().shape == dummy.values().shape
     assert h[bh.underflow, bh.underflow].variance == 4.0
     assert h.storage_type == bh.storage.Weight
+
+
+def test_hist_conversion():
+    import hist as hist_mod
+
+    dummy = cuda_histogram.Hist(
+        cuda_histogram.axis.Regular(1, 0, 1, name="dummy", label="Number of events"),
+        cuda_histogram.axis.Variable([0, 2, 3, 10], name="var", label="Variable axis"),
+        name="Dummy",
+        label="Just Dummy",
+    )
+    dummy.fill(cp.array(0.05), cp.array(0.05))
+
+    h = dummy.to_hist()
+    assert isinstance(h, hist_mod.Hist)
+    assert h.axes[0].name == "dummy"
+    assert h.axes[0].label == "Number of events"
+    assert h.axes[1].name == "var"
+    assert h.axes[1].label == "Variable axis"
+    assert h[0, 0] == 1.0
+    assert h.values().shape == dummy.values().shape
