@@ -111,6 +111,29 @@ def test_hist():
     assert (h[:, 0].variance() == h.variance()[:, 0].reshape((20, 1))).all()
 
 
+def test_partial_indexing():
+    counts, test_eta, test_pt = dummy_jagged_eta_pt()
+
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.Regular(20, 0, 2, label="x", name="x"),
+        cuda_histogram.axis.Variable([0, 5, 15, 30], label="y", name="why"),
+    )
+    h.fill(test_eta, test_pt)
+
+    assert (h[0.1].values() == h[0.1, :].values()).all()
+    assert (h[...].values() == h.values()).all()
+    assert h[...].axes() == h.axes()
+    assert (h[0.1, ...].values() == h[0.1, :].values()).all()
+    assert (h[..., 3].values() == h[:, 3].values()).all()
+
+    with pytest.raises(IndexError):
+        h[0.1, 3, 5]
+    with pytest.raises(IndexError):
+        h[..., ...]
+    with pytest.raises(ValueError):
+        h["x"]
+
+
 def test_cpu_conversion():
     import boost_histogram as bh
 
