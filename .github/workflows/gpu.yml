@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -21,8 +22,11 @@ env:
 jobs:
   gpu-tests:
     name: CUDA ${{ matrix.cuda-version }}
-    if:
-      github.event_name != 'schedule' || github.repository_owner == 'scikit-hep'
+    # Self-hosted runners must not run code from forks.
+    if: >-
+      (github.event_name != 'schedule' || github.repository_owner ==
+      'scikit-hep') && (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: self-hosted
     timeout-minutes: 60
 
