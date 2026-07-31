@@ -183,12 +183,23 @@ class Hist:
                 dense_idx.append(islice)
                 new_dims.append(ax.reduced(islice))
 
+        dense_axes = [ax for ax in self._axes if isinstance(ax, DenseAxis)]
+
         def dense_op(array: Any) -> Any:
             """Apply the dense slices, always returning a fresh array"""
             if not dense_idx:
                 return array.copy()
             as_numpy = array.get()
             blocked = np.block(_assemble_blocks(as_numpy, dense_idx))
+            # _assemble_blocks sums out-of-slice content into the flow bins;
+            # a disabled flow bin drops that content instead
+            for i, ax in enumerate(dense_axes):
+                for disabled, flow_bin in (
+                    (not ax.underflow, 0),
+                    (not ax.overflow, -2),
+                ):
+                    if disabled:
+                        blocked[(slice(None),) * i + (flow_bin,)] = 0
             return cupy.asarray(blocked)
 
         out = Hist(*new_dims, label=self._label)
@@ -275,10 +286,27 @@ class Hist:
 
         if self.dense_dim() > 0:
             dense_indices = tuple(
-                cupy.asarray(d.index(value))
+                cupy.atleast_1d(cupy.asarray(d.index(value)))
                 for d, value in zip(self._axes, args, strict=False)
                 if isinstance(d, DenseAxis)
             )
+            # entries landing in a disabled flow bin are discarded
+            dense_axes = [d for d in self._axes if isinstance(d, DenseAxis)]
+            keep = None
+            for i, (d, idx) in enumerate(zip(dense_axes, dense_indices, strict=True)):
+                for disabled, flow_bin in (
+                    (not d.underflow, 0),
+                    (not d.overflow, self._dense_shape[i] - 2),
+                ):
+                    if disabled:
+                        mask = idx != flow_bin
+                        keep = mask if keep is None else keep & mask
+            if keep is not None:
+                dense_indices = cupy.broadcast_arrays(*dense_indices)
+                keep = cupy.broadcast_to(keep, dense_indices[0].shape)
+                dense_indices = tuple(idx[keep] for idx in dense_indices)
+                if weight is not None:
+                    weight = cupy.broadcast_to(weight, keep.shape)[keep]
             xy = cupy.atleast_1d(
                 cupy.ravel_multi_index(dense_indices, self._dense_shape)
             )
@@ -373,9 +401,9 @@ class Hist:
         """
         Convert this cuda_histogram object to a boost_histogram object.
 
-        underflow and overflow are set True and nanflow is lost in the conversion.
-        Categorical axes convert to ``StrCategory`` axes with the same
-        ``growth``/``overflow`` settings.
+        The produced axes carry over each axis's ``underflow``/``overflow``
+        settings; nanflow is lost in the conversion.  Categorical axes convert
+        to ``StrCategory`` axes with the same ``growth``/``overflow`` settings.
 
         Appropriate boost-histogram axis and storage are automatically chosen.
         All the arguments of cuda-histogram's axis and histogram are passed down.
@@ -397,8 +425,8 @@ class Hist:
                     hist.axis.Integer(
                         axis._lo,
                         axis._hi,
-                        underflow=True,
-                        overflow=True,
+                        underflow=axis.underflow,
+                        overflow=axis.overflow,
                         name=axis.name,
                         label=axis.label,
                     )
@@ -409,8 +437,8 @@ class Hist:
                         axis._bins,
                         axis._lo,
                         axis._hi,
-                        underflow=True,
-                        overflow=True,
+                        underflow=axis.underflow,
+                        overflow=axis.overflow,
                         name=axis.name,
                         label=axis.label,
                     )
@@ -419,8 +447,8 @@ class Hist:
                 newaxes.append(
                     hist.axis.Variable(
                         axis.edges().get(),
-                        underflow=True,
-                        overflow=True,
+                        underflow=axis.underflow,
+                        overflow=axis.overflow,
                         name=axis.name,
                         label=axis.label,
                     )
@@ -446,10 +474,13 @@ class Hist:
         out.label = self.label  # type: ignore[attr-defined]
 
         view = out.view(flow=True)
-        # drop the nanflow bin of dense axes; a category axis has no nanflow,
-        # and values(flow=True) already matches its extent
+        # drop the nanflow bin of dense axes, plus any disabled flow bin the
+        # boost view does not have; a category axis has no nanflow, and
+        # values(flow=True) already matches its extent
         nonan = tuple(
-            slice(None) if isinstance(axis, SparseAxis) else slice(None, -1)
+            slice(None if axis.underflow else 1, -1 if axis.overflow else -2)
+            if isinstance(axis, DenseAxis)
+            else slice(None)
             for axis in self.axes()
         )
         if self._sumw2 is None:
