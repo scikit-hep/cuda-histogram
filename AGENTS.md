@@ -53,9 +53,9 @@ sparse-axis indices) to a dense CuPy array of shape `Hist._dense_shape`.
 `_sumw2` stays `None` until the first weighted `fill()`, at which point
 `_init_sumw2()` seeds it from `_sumw`; `variance()` returns `None` while it is
 `None`, and `to_boost()` picks `Double` vs `Weight` storage from it. The sparse
-key holds one bin index per `StrCategory` axis (empty tuple when there are
-none); index `size` is the overflow bin of a non-growing `overflow=True` axis,
-and unmatched fills on an `overflow=False` axis are discarded entirely.
+key holds one bin index per category axis (empty tuple when there are none);
+index `size` is the overflow bin of a non-growing `overflow=True` axis, and
+unmatched fills on an `overflow=False` axis are discarded entirely.
 `values()`/`variance()` stack the sparse dict into a dense array via
 `Hist._stack_sparse`, reordering so category dimensions land in axis order.
 
@@ -66,13 +66,13 @@ and `size + 1` for `Variable` — these agree because `Variable.size` counts the
 extra `inf` edge appended in `Bin.__init__`. `_overflow_behavior(flow)` is the
 single place that translates `flow=False` into `slice(1, -2)`.
 
-**Filling.** `Hist.fill()` requires CuPy arrays (a plain string per
-`StrCategory` axis). It maps values to indices via `axis.index()`, flattens with
-`cupy.ravel_multi_index`, and accumulates with `cupy.bincount`. Uniform
-(`Regular`) axes compute indices with the `_clip_bins` `cupy.ElementwiseKernel`
-at the top of `axis/__init__.py` (clamps to the flow bins and sends NaN to
-nanflow); `Variable` axes use `cupy.searchsorted` against edges with `inf`
-appended so NaN sorts past it.
+**Filling.** `Hist.fill()` requires CuPy arrays (a plain string/int per
+`StrCategory`/`IntCategory` axis). It maps values to indices via `axis.index()`,
+flattens with `cupy.ravel_multi_index`, and accumulates with `cupy.bincount`.
+Uniform (`Regular`) axes compute indices with the `_clip_bins`
+`cupy.ElementwiseKernel` at the top of `axis/__init__.py` (clamps to the flow
+bins and sends NaN to nanflow); `Variable` axes use `cupy.searchsorted` against
+edges with `inf` appended so NaN sorts past it.
 
 **Indexing.** `Hist.__getitem__` is deliberately narrow: indices are _values in
 bin-edge coordinates_, not integer bin numbers, no interpolation (a
@@ -92,5 +92,6 @@ survive.
 ## Conventions
 
 - `from __future__ import annotations` is a required first import (ruff isort).
-- Axes are `Regular`, `Variable`, and `StrCategory` only; when adding features,
-  check whether boost-histogram already names the concept and match that name.
+- Axes are `Regular`, `Variable`, `StrCategory`, and `IntCategory` only; when
+  adding features, check whether boost-histogram already names the concept and
+  match that name.

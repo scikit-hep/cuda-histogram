@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import functools
 import numbers
+import typing
 import warnings
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, ClassVar, Generic, TypeVar
 
 import awkward
 import cupy
 import numpy as np
 
+if typing.TYPE_CHECKING:
+    from typing import Self
+
 __all__: list[str] = [
     "Bin",
+    "IntCategory",
     "Integer",
     "Interval",
     "Regular",
@@ -204,39 +209,21 @@ class SparseAxis(Axis):
         raise NotImplementedError
 
 
-def _check_str(category: Any) -> None:
-    if not isinstance(category, str):
-        raise TypeError(
-            f"StrCategory only supports string categories, received {category!r}"
-        )
+_CategoryT = TypeVar("_CategoryT", str, int)
 
 
-class StrCategory(SparseAxis):
-    """A categorical axis with string-valued bins.
+class _Category(SparseAxis, Generic[_CategoryT]):
+    """Shared implementation of ``StrCategory`` and ``IntCategory``.
 
-    Modeled on ``boost_histogram.axis.StrCategory``. Categories are kept in
-    insertion order, and histogram storage is sparse: only filled categories
-    occupy memory.
-
-    Parameters
-    ----------
-        categories : Iterable[str]
-            Initial categories, in bin order.
-        name : str
-            is used as a keyword in histogram filling, immutable
-        label : str
-            describes the meaning of the axis, can be changed
-        growth : bool
-            If True, filling a category not on the axis appends it; a growing
-            axis matches everything, so it has no overflow bin.
-        overflow : bool
-            If True (and not growing), unmatched fills are counted in a
-            trailing overflow bin; if False they are discarded.
+    Categories are kept in insertion order, and histogram storage is sparse:
+    only filled categories occupy memory.
     """
+
+    _category_type: ClassVar[type]
 
     def __init__(
         self,
-        categories: Iterable[str] = (),
+        categories: Iterable[_CategoryT] = (),
         *,
         name: str = "",
         label: str = "",
@@ -244,14 +231,21 @@ class StrCategory(SparseAxis):
         overflow: bool = True,
     ) -> None:
         super().__init__(name, label)
-        self._indices: dict[str, int] = {}
+        self._indices: dict[_CategoryT, int] = {}
         self._growth = growth
         self._overflow = overflow and not growth
         for category in categories:
             self._add(category)
 
-    def _add(self, category: str) -> int:
-        _check_str(category)
+    def _check(self, category: Any) -> None:
+        if not isinstance(category, self._category_type):
+            raise TypeError(
+                f"{type(self).__name__} only supports "
+                f"{self._category_type.__name__} categories, received {category!r}"
+            )
+
+    def _add(self, category: _CategoryT) -> int:
+        self._check(category)
         if category in self._indices:
             raise ValueError(f"Duplicate category {category!r}")
         index = len(self._indices)
@@ -281,20 +275,21 @@ class StrCategory(SparseAxis):
         """Number of categories, including the overflow bin if present"""
         return self.size + 1 if self._overflow else self.size
 
-    def index(self, identifier: str) -> int | None:
+    def index(self, identifier: _CategoryT) -> int | None:
         """Index of a category
 
         Parameters
         ----------
-            identifier : str
-                The category to look up.
+            identifier
+                The category to look up: a ``str`` for ``StrCategory``, an
+                ``int`` for ``IntCategory`` (a mismatch raises ``TypeError``).
 
         Returns the integer bin index of the category. An unknown category
         is appended if the axis was constructed with ``growth=True``;
         otherwise it maps to the overflow bin (index ``size``), or to
         ``None`` (meaning: discard) if ``overflow=False``.
         """
-        _check_str(identifier)
+        self._check(identifier)
         idx = self._indices.get(identifier)
         if idx is not None:
             return idx
@@ -302,11 +297,12 @@ class StrCategory(SparseAxis):
             return self._add(identifier)
         return self.size if self._overflow else None
 
-    def __getitem__(self, index: int) -> str:
+    def __getitem__(self, index: int) -> _CategoryT:
         return self.identifiers()[index]
 
     def _ireduce(self, the_slice: Any) -> list[int]:
-        if isinstance(the_slice, str):
+        out: list[_CategoryT]
+        if isinstance(the_slice, self._category_type):
             if the_slice not in self._indices:
                 raise KeyError(f"No category {the_slice!r} in axis {self!r}")
             out = [the_slice]
@@ -322,16 +318,16 @@ class StrCategory(SparseAxis):
             raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
         return [self._indices[k] for k in out]
 
-    def reduced(self, indices: list[int]) -> StrCategory:
+    def reduced(self, indices: list[int]) -> Self:
         """Return a new axis with only the categories at the given indices
 
         Parameters
         ----------
             indices : list[int]
-                Category indices, usually as returned from ``StrCategory._ireduce``
+                Category indices, usually as returned from ``_ireduce``
         """
         categories = self.identifiers()
-        return StrCategory(
+        return type(self)(
             [categories[i] for i in indices],
             name=self._name,
             label=self._label,
@@ -339,9 +335,61 @@ class StrCategory(SparseAxis):
             overflow=self._overflow,
         )
 
-    def identifiers(self) -> list[str]:
-        """List of string categories"""
+    def identifiers(self) -> list[_CategoryT]:
+        """List of categories"""
         return list(self._indices)
+
+
+class StrCategory(_Category[str]):
+    """A categorical axis with string-valued bins.
+
+    Modeled on ``boost_histogram.axis.StrCategory``. Categories are kept in
+    insertion order, and histogram storage is sparse: only filled categories
+    occupy memory.
+
+    Parameters
+    ----------
+        categories : Iterable[str]
+            Initial categories, in bin order.
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
+        growth : bool
+            If True, filling a category not on the axis appends it; a growing
+            axis matches everything, so it has no overflow bin.
+        overflow : bool
+            If True (and not growing), unmatched fills are counted in a
+            trailing overflow bin; if False they are discarded.
+    """
+
+    _category_type: ClassVar[type] = str
+
+
+class IntCategory(_Category[int]):
+    """A categorical axis with integer-valued bins.
+
+    Modeled on ``boost_histogram.axis.IntCategory``. Categories are kept in
+    insertion order, and histogram storage is sparse: only filled categories
+    occupy memory.
+
+    Parameters
+    ----------
+        categories : Iterable[int]
+            Initial categories, in bin order.
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
+        growth : bool
+            If True, filling a category not on the axis appends it; a growing
+            axis matches everything, so it has no overflow bin.
+        overflow : bool
+            If True (and not growing), unmatched fills are counted in a
+            trailing overflow bin; if False they are discarded.
+    """
+
+    _category_type: ClassVar[type] = int
 
 
 class DenseAxis(Axis):

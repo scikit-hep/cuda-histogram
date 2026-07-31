@@ -28,8 +28,8 @@ Main features of cuda-histogram:
       - `centers()`
       - `index(...)`
       - ...
-    - `StrCategory` axis (sparse storage, with boost-histogram's `growth` and
-      `overflow` behaviors)
+    - `StrCategory` and `IntCategory` axes (sparse storage, with
+      boost-histogram's `growth` and `overflow` behaviors)
   - Histogram
     - `fill(..., weight=...)` (including `Nan` flow)
     - simple indexing with slicing (see example below)

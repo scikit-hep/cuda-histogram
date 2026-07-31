@@ -10,6 +10,7 @@ import numpy as np
 from cuda_histogram.axis import (
     Axis,
     DenseAxis,
+    IntCategory,
     Integer,
     Regular,
     SparseAxis,
@@ -247,20 +248,23 @@ class Hist:
 
         Parameters
         ----------
-            *args : cupy.ndarray or str
+            *args : cupy.ndarray or str or int
                 Provide one CuPy array (0-d is fine) per dense axis and a
-                single string category per ``StrCategory`` axis; plain
-                Python numbers are not accepted.
+                single category per sparse axis: a plain string for
+                ``StrCategory``, a plain int for ``IntCategory``. Plain
+                Python numbers are not accepted for dense axes.
             weight : cupy.ndarray
                 Provide weights.
         """
-        if not all(isinstance(a, cupy.ndarray | str) for a in args):
-            raise TypeError("pass CuPy arrays (or a string per StrCategory axis)")
         if weight is not None and not isinstance(weight, cupy.ndarray):
             raise TypeError("pass CuPy arrays")
 
         if len(self._axes) != len(args):
             raise ValueError("mismatching dimensions for provided values and axes")
+        # sparse axes validate their own scalar category in index()
+        for ax, value in zip(self._axes, args, strict=True):
+            if isinstance(ax, DenseAxis) and not isinstance(value, cupy.ndarray):
+                raise TypeError("pass one CuPy array per dense axis")
 
         indices = tuple(
             d.index(value)
@@ -403,7 +407,8 @@ class Hist:
 
         The produced axes carry over each axis's ``underflow``/``overflow``
         settings; nanflow is lost in the conversion.  Categorical axes convert
-        to ``StrCategory`` axes with the same ``growth``/``overflow`` settings.
+        to ``StrCategory``/``IntCategory`` axes with the same
+        ``growth``/``overflow`` settings.
 
         Appropriate boost-histogram axis and storage are automatically chosen.
         All the arguments of cuda-histogram's axis and histogram are passed down.
@@ -417,6 +422,7 @@ class Hist:
             | hist.axis.Integer
             | hist.axis.Variable
             | hist.axis.StrCategory
+            | hist.axis.IntCategory
         ] = []
         for axis in self.axes():
             # Integer subclasses Regular, so it must be checked first
@@ -456,6 +462,16 @@ class Hist:
             elif isinstance(axis, StrCategory):
                 newaxes.append(
                     hist.axis.StrCategory(
+                        axis.identifiers(),
+                        growth=axis.growth,
+                        overflow=axis.overflow,
+                        name=axis.name,
+                        label=axis.label,
+                    )
+                )
+            elif isinstance(axis, IntCategory):
+                newaxes.append(
+                    hist.axis.IntCategory(
                         axis.identifiers(),
                         growth=axis.growth,
                         overflow=axis.overflow,
