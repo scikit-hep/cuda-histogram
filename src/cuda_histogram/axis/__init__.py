@@ -188,7 +188,12 @@ class SparseAxis(Axis):
 
     @property
     def size(self) -> int:
-        """Number of bins"""
+        """Number of bins, not counting the overflow bin"""
+        raise NotImplementedError
+
+    @property
+    def overflow(self) -> bool:
+        """Whether unmatched fills are counted in a trailing overflow bin"""
         raise NotImplementedError
 
 
@@ -208,8 +213,11 @@ class StrCategory(SparseAxis):
         label : str
             describes the meaning of the axis, can be changed
         growth : bool
-            If True, filling a category not on the axis appends it instead
-            of raising ``KeyError``.
+            If True, filling a category not on the axis appends it; a growing
+            axis matches everything, so it has no overflow bin.
+        overflow : bool
+            If True (and not growing), unmatched fills are counted in a
+            trailing overflow bin; if False they are discarded.
     """
 
     def __init__(
@@ -219,10 +227,12 @@ class StrCategory(SparseAxis):
         name: str = "",
         label: str = "",
         growth: bool = False,
+        overflow: bool = True,
     ) -> None:
         super().__init__(name, label)
         self._indices: dict[str, int] = {}
         self._growth = growth
+        self._overflow = overflow and not growth
         for category in categories:
             self._add(category)
 
@@ -246,11 +256,16 @@ class StrCategory(SparseAxis):
         return self._growth
 
     @property
+    def overflow(self) -> bool:
+        """Whether unmatched fills are counted in a trailing overflow bin"""
+        return self._overflow
+
+    @property
     def size(self) -> int:
-        """Number of categories"""
+        """Number of categories, not counting the overflow bin"""
         return len(self._indices)
 
-    def index(self, identifier: str) -> int:
+    def index(self, identifier: str) -> int | None:
         """Index of a category
 
         Parameters
@@ -258,20 +273,19 @@ class StrCategory(SparseAxis):
             identifier : str
                 The category to look up.
 
-        Returns the integer bin index of the category. If the axis was
-        constructed with ``growth=True``, an unknown category is appended
-        instead of raising ``KeyError``.
+        Returns the integer bin index of the category. An unknown category
+        is appended if the axis was constructed with ``growth=True``;
+        otherwise it maps to the overflow bin (index ``size``), or to
+        ``None`` (meaning: discard) if ``overflow=False``.
         """
         if not isinstance(identifier, str):
             raise TypeError(
                 f"StrCategory only supports string categories, received {identifier!r}"
             )
         if identifier not in self._indices:
-            if not self._growth:
-                raise KeyError(
-                    f"No category {identifier!r} in axis {self!r} (pass growth=True to add categories when filling)"
-                )
-            return self._add(identifier)
+            if self._growth:
+                return self._add(identifier)
+            return self.size if self._overflow else None
         return self._indices[identifier]
 
     def __getitem__(self, index: int) -> str:
@@ -312,6 +326,7 @@ class StrCategory(SparseAxis):
             name=self._name,
             label=self._label,
             growth=self._growth,
+            overflow=self._overflow,
         )
 
     def identifiers(self) -> list[str]:

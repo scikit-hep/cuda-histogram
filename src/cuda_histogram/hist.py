@@ -195,13 +195,28 @@ class Hist:
         out = Hist(*new_dims, label=self._label)
         if self._sumw2 is not None:
             out._init_sumw2()
+        sparse_axes = self.sparse_axes()
+
+        def remap_key(sparse_key: _SparseKey) -> _SparseKey | None:
+            """Old sparse key -> reduced axes' bin indices, None to drop
+
+            Overflow content stays in the reduced axis's overflow bin;
+            deselected categories are dropped, as in boost-histogram.
+            """
+            new_key = []
+            for k, idx, ax in zip(sparse_key, sparse_idx, sparse_axes, strict=True):
+                if k in idx:
+                    new_key.append(idx.index(k))
+                elif ax.overflow and k == ax.size:
+                    new_key.append(len(idx))
+                else:
+                    return None
+            return tuple(new_key)
+
         for sparse_key in self._sumw:
-            if not all(k in idx for k, idx in zip(sparse_key, sparse_idx, strict=True)):
+            new_key = remap_key(sparse_key)
+            if new_key is None:
                 continue
-            # remap to the reduced axes' bin indices
-            new_key = tuple(
-                idx.index(k) for k, idx in zip(sparse_key, sparse_idx, strict=True)
-            )
             existing = new_key in out._sumw
             if existing:
                 out._sumw[new_key] += dense_op(self._sumw[sparse_key])
@@ -235,14 +250,17 @@ class Hist:
         if len(self._axes) != len(args):
             raise ValueError("mismatching dimensions for provided values and axes")
 
-        if weight is not None and self._sumw2 is None:
-            self._init_sumw2()
-
         sparse_key = tuple(
             d.index(value)
             for d, value in zip(self._axes, args, strict=False)
             if isinstance(d, SparseAxis)
         )
+        # an unknown category on an overflow=False axis discards the fill
+        if any(k is None for k in sparse_key):
+            return
+
+        if weight is not None and self._sumw2 is None:
+            self._init_sumw2()
 
         if sparse_key not in self._sumw:
             self._sumw[sparse_key] = cupy.zeros(
@@ -298,14 +316,21 @@ class Hist:
     def _stack_sparse(self, sumw: dict[_SparseKey, Any], flow: bool) -> Any:
         """Stack per-sparse-key storage into one array, axes in histogram order
 
-        Sparse-axis bins that were never filled are zero.
+        Sparse-axis bins that were never filled are zero. With ``flow``, an
+        axis with ``overflow=True`` gets a trailing overflow bin.
         """
         dense_shape = (
             self._dense_shape if flow else tuple(n - 3 for n in self._dense_shape)
         )
-        sparse_shape = tuple(ax.size for ax in self.sparse_axes())
+        sparse_shape = tuple(
+            ax.size + 1 if flow and ax.overflow else ax.size
+            for ax in self.sparse_axes()
+        )
         out = cupy.zeros(shape=sparse_shape + dense_shape, dtype=self._dtype)
         for key, array in sumw.items():
+            # without flow, this drops content in category overflow bins
+            if any(k >= n for k, n in zip(key, sparse_shape, strict=True)):
+                continue
             out[key] = self._view_dim(array, flow)
         order = [i for i, ax in enumerate(self._axes) if isinstance(ax, SparseAxis)]
         order += [i for i, ax in enumerate(self._axes) if isinstance(ax, DenseAxis)]
@@ -315,8 +340,9 @@ class Hist:
         """Extract the values from this histogram.
 
         Sparse (categorical) axes appear as ordinary dimensions of the
-        returned array, with categories in axis order; ``flow`` only affects
-        dense axes.
+        returned array, with categories in axis order; with ``flow``, a
+        categorical axis contributes a trailing overflow bin only if it has
+        ``overflow=True``.
 
         Parameters
         ----------
@@ -351,7 +377,8 @@ class Hist:
         Convert this cuda_histogram object to a boost_histogram object.
 
         underflow and overflow are set True and nanflow is lost in the conversion.
-        Categorical axes convert to growable ``StrCategory`` axes.
+        Categorical axes convert to ``StrCategory`` axes with the same
+        ``growth``/``overflow`` settings.
 
         Appropriate boost-histogram axis and storage are automatically chosen.
         All the arguments of cuda-histogram's axis and histogram are passed down.
@@ -387,11 +414,11 @@ class Hist:
                     )
                 )
             elif isinstance(axis, StrCategory):
-                # growth=True so the axis has no overflow slot
                 newaxes.append(
                     hist.axis.StrCategory(
                         axis.identifiers(),
-                        growth=True,
+                        growth=axis.growth,
+                        overflow=axis.overflow,
                         name=axis.name,
                         label=axis.label,
                     )
@@ -407,7 +434,8 @@ class Hist:
         out.label = self.label  # type: ignore[attr-defined]
 
         view = out.view(flow=True)
-        # drop the nanflow bin of dense axes; category axes have no flow bins
+        # drop the nanflow bin of dense axes; a category axis has no nanflow,
+        # and values(flow=True) already matches its extent
         nonan = tuple(
             slice(None) if isinstance(axis, SparseAxis) else slice(None, -1)
             for axis in self.axes()

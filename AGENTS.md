@@ -54,7 +54,9 @@ sparse-axis indices) to a dense CuPy array of shape `Hist._dense_shape`.
 `_init_sumw2()` seeds it from `_sumw`; `variance()` returns `None` while it is
 `None`, and `to_boost()` picks `Double` vs `Weight` storage from it. The sparse
 key holds one bin index per `StrCategory` axis (empty tuple when there are
-none); `values()`/`variance()` stack the sparse dict into a dense array via
+none); index `size` is the overflow bin of a non-growing `overflow=True` axis,
+and unmatched fills on an `overflow=False` axis are discarded entirely.
+`values()`/`variance()` stack the sparse dict into a dense array via
 `Hist._stack_sparse`, reordering so category dimensions land in axis order.
 
 **Bin layout.** Every dense axis stores `nbins + 3` bins: index `0` = underflow,

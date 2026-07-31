@@ -281,15 +281,20 @@ def test_str_category_axis() -> None:
     assert ax[-1] == "two"
     assert ax.identifiers() == ["one", "two"]
     assert repr(ax) == "StrCategory(['one', 'two'])"
-    with pytest.raises(KeyError):
-        ax.index("three")
+    assert ax.overflow
+    assert ax.index("three") == 2  # overflow bin
     assert ax.size == 2
     with pytest.raises(TypeError):
         ax.index(1)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="Duplicate"):
         cuda_histogram.axis.StrCategory(["a", "a"])
 
+    no_overflow = cuda_histogram.axis.StrCategory(["one", "two"], overflow=False)
+    assert not no_overflow.overflow
+    assert no_overflow.index("three") is None
+
     grow = cuda_histogram.axis.StrCategory(growth=True)
+    assert not grow.overflow  # a growing axis matches everything
     assert grow.size == 0
     assert grow.index("b") == 0
     assert grow.index("a") == 1
@@ -319,16 +324,29 @@ def test_str_category_fill() -> None:
     assert (h.values() == cp.array([[1, 2, 0, 0], [0, 0, 3, 0]])).all()
     assert (h.variance() == cp.array([[1, 2, 0, 0], [0, 0, 5, 0]])).all()
 
-    # unknown category on a non-growing axis
+    # unknown category on a non-growing axis lands in the overflow bin
     fixed = cuda_histogram.Hist(
         cuda_histogram.axis.StrCategory(["a", "b"], name="sample"),
         cuda_histogram.axis.Regular(4, 0, 1, name="x"),
     )
     assert fixed.values().shape == (2, 4)
+    assert fixed.values(flow=True).shape == (3, 7)
     fixed.fill("b", cp.array([0.1]))
+    fixed.fill("c", cp.array([0.1]))
     assert (fixed.values() == cp.array([[0, 0, 0, 0], [1, 0, 0, 0]])).all()
-    with pytest.raises(KeyError):
-        fixed.fill("c", cp.array([0.1]))
+    assert (fixed.values(flow=True)[2] == cp.array([0, 1, 0, 0, 0, 0, 0])).all()
+
+    # with overflow off, unknown categories are discarded
+    discard = cuda_histogram.Hist(
+        cuda_histogram.axis.StrCategory(["a", "b"], overflow=False, name="sample"),
+        cuda_histogram.axis.Regular(4, 0, 1, name="x"),
+    )
+    assert discard.values(flow=True).shape == (2, 7)
+    discard.fill("c", cp.array([0.1]), weight=cp.array([2.0]))
+    assert discard.values(flow=True).sum() == 0
+    assert discard.variance() is None  # the discarded fill never seeded sumw2
+    discard.fill("a", cp.array([0.1]))
+    assert (discard.values() == cp.array([[1, 0, 0, 0], [0, 0, 0, 0]])).all()
 
 
 def test_str_category_only() -> None:
@@ -376,6 +394,41 @@ def test_str_category_getitem() -> None:
     assert empty.values().shape == (0, 4)
     with pytest.raises(IndexError):
         h[0.5, :]
+
+
+def test_str_category_overflow_slicing_and_convert() -> None:
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.StrCategory(["a", "b"], name="s"),
+        cuda_histogram.axis.Regular(4, 0, 1, name="x"),
+    )
+    h.fill("a", cp.array([0.1, 0.3]))
+    h.fill("b", cp.array([0.5]))
+    h.fill("zzz", cp.array([0.7, 0.7, 0.7]))
+    assert h.values().sum() == 3
+    assert h.values(flow=True).sum() == 6
+
+    # overflow content survives selection, like boost-histogram picks
+    pick = h["b"]
+    assert pick.values(flow=True).shape == (2, 7)
+    assert (pick.values(flow=True)[1] == h.values(flow=True)[2]).all()
+    assert pick.values(flow=True)[1].sum() == 3
+
+    out = h.to_boost()
+    assert not out.axes[0].traits.growth
+    assert out.axes[0].traits.overflow
+    assert out.axes[0].extent == 3
+    assert (out.values() == h.values().get()).all()
+    # the overflow bin round-trips (drop only the dense nanflow on our side)
+    assert (out.view(flow=True) == h.values(flow=True)[:, :-1].get()).all()
+
+    no_overflow = cuda_histogram.Hist(
+        cuda_histogram.axis.StrCategory(["a", "b"], overflow=False, name="s"),
+    )
+    no_overflow.fill("a")
+    out2 = no_overflow.to_boost()
+    assert not out2.axes[0].traits.overflow
+    assert out2.axes[0].extent == 2
+    assert (out2.values() == no_overflow.values().get()).all()
 
 
 def test_str_category_axis_order() -> None:
