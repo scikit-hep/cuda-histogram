@@ -9,6 +9,7 @@ import numpy as np
 
 from cuda_histogram.axis import (
     Axis,
+    Boolean,
     DenseAxis,
     IntCategory,
     Integer,
@@ -408,7 +409,8 @@ class Hist:
         The produced axes carry over each axis's ``underflow``/``overflow``
         settings; nanflow is lost in the conversion.  Categorical axes convert
         to ``StrCategory``/``IntCategory`` axes with the same
-        ``growth``/``overflow`` settings.
+        ``growth``/``overflow`` settings; ``Boolean`` axes convert to flow-less
+        ``Boolean`` axes (their internal flow bins never fill).
 
         Appropriate boost-histogram axis and storage are automatically chosen.
         All the arguments of cuda-histogram's axis and histogram are passed down.
@@ -421,12 +423,15 @@ class Hist:
             hist.axis.Regular
             | hist.axis.Integer
             | hist.axis.Variable
+            | hist.axis.Boolean
             | hist.axis.StrCategory
             | hist.axis.IntCategory
         ] = []
         for axis in self.axes():
-            # Integer subclasses Regular, so it must be checked first
-            if isinstance(axis, Integer):
+            # Boolean and Integer subclass Regular, so check them first
+            if isinstance(axis, Boolean):
+                newaxes.append(hist.axis.Boolean(name=axis.name, label=axis.label))
+            elif isinstance(axis, Integer):
                 newaxes.append(
                     hist.axis.Integer(
                         axis._lo,

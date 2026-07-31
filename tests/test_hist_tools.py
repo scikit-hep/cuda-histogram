@@ -680,6 +680,103 @@ def test_mixed_category_axes() -> None:
     assert (out.values() == h.values().get()).all()
 
 
+def test_boolean_axis() -> None:
+    ax = cuda_histogram.axis.Boolean(name="flag", label="Flag")
+    assert ax.size == 2
+    assert ax.name == "flag"
+    assert ax.label == "Flag"
+    assert repr(ax) == "Boolean()"
+    assert (ax.edges() == cp.array([0.0, 1.0, 2.0])).all()
+    assert (ax.centers() == cp.array([0.5, 1.5])).all()
+    # dense indices: 1 = False bin, 2 = True bin; flow bins never fill
+    assert (ax.index(cp.array([False, True])) == cp.array([1, 2])).all()
+    # nonzero coerces to True; NaN is truthy, so it lands in the True bin
+    assert (
+        ax.index(cp.array([0.0, 0.5, -2.0, np.nan])) == cp.array([1, 2, 2, 2])
+    ).all()
+    assert ax == cuda_histogram.axis.Boolean(name="flag")
+    assert ax == "flag"
+    assert ax != cuda_histogram.axis.Regular(2, 0, 2, name="flag")
+    assert cuda_histogram.axis.Regular(2, 0, 2, name="flag") != ax
+
+
+def test_boolean_fill() -> None:
+    h = cuda_histogram.Hist(cuda_histogram.axis.Boolean(name="flag"))
+    assert h.values().shape == (2,)
+    assert h.values(flow=True).shape == (5,)
+
+    h.fill(cp.array([True, False, True, True]))
+    assert (h.values() == cp.array([1.0, 3.0])).all()
+    assert h.variance() is None
+    assert (h.values(flow=True) == cp.array([0, 1, 3, 0, 0])).all()
+
+    # non-bool numerics coerce to truthiness; NaN counts as True, not nanflow
+    h.fill(cp.array([0.0, 2.0, -1.0, np.nan]))
+    assert (h.values() == cp.array([2.0, 6.0])).all()
+    assert h.values(flow=True).sum() == 8
+
+    h.fill(cp.array([0, 7]))  # integer input
+    assert (h.values() == cp.array([3.0, 7.0])).all()
+
+
+def test_boolean_weighted_fill() -> None:
+    h = cuda_histogram.Hist(cuda_histogram.axis.Boolean(name="flag"))
+    h.fill(cp.array([True, False, True]), weight=cp.array([2.0, 3.0, 4.0]))
+    assert (h.values() == cp.array([3.0, 6.0])).all()
+    assert (h.variance() == cp.array([9.0, 20.0])).all()
+
+
+def test_boolean_with_regular() -> None:
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.Boolean(name="flag"),
+        cuda_histogram.axis.Regular(4, 0, 1, name="x"),
+    )
+    h.fill(cp.array([True, False, True]), cp.array([0.1, 0.3, 0.9]))
+    assert h.values().shape == (2, 4)
+    assert (h.values() == cp.array([[0, 1, 0, 0], [1, 0, 0, 1]])).all()
+
+    # full slices work; the Regular axis can still be sliced by value
+    assert (h[...].values() == h.values()).all()
+    assert h[...].axes() == h.axes()
+    sel = h[:, 0.3]
+    assert (sel.values() == h.values()[:, 1].reshape(2, 1)).all()
+
+    # anything but a full slice on the Boolean axis is an error
+    with pytest.raises(IndexError, match="Boolean"):
+        h[1, :]
+    with pytest.raises(IndexError, match="Boolean"):
+        h[0.5:, :]
+
+
+def test_boolean_to_hist() -> None:
+    import boost_histogram as bh
+    import hist as hist_mod
+
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.Boolean(name="flag", label="Flag"),
+        cuda_histogram.axis.Regular(4, 0, 1, name="x"),
+    )
+    h.fill(cp.array([True, False, True]), cp.array([0.1, 0.3, 1.5]))
+
+    out = h.to_hist()
+    assert isinstance(out, hist_mod.Hist)
+    assert isinstance(out.axes[0], bh.axis.Boolean)
+    assert out.axes[0].name == "flag"
+    assert out.axes[0].label == "Flag"
+    assert out.axes[0].extent == 2  # no flow bins
+    assert out.storage_type == bh.storage.Double
+    assert (out.values() == h.values().get()).all()
+    # only the Regular axis has flow content to preserve
+    assert out.values(flow=True).sum() == h.values(flow=True).sum()
+    assert out[bh.loc(True), bh.overflow] == 1.0
+
+    h.fill(cp.array([False]), cp.array([0.5]), weight=cp.array([2.0]))
+    out2 = h.to_boost()
+    assert out2.storage_type == bh.storage.Weight
+    assert (out2.values() == h.values().get()).all()
+    assert (out2.variances() == h.variance().get()).all()
+
+
 def test_hist_conversion() -> None:
     import hist as hist_mod
 

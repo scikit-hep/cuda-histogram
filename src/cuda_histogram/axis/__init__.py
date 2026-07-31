@@ -16,6 +16,7 @@ if typing.TYPE_CHECKING:
 
 __all__: list[str] = [
     "Bin",
+    "Boolean",
     "IntCategory",
     "Integer",
     "Interval",
@@ -891,6 +892,70 @@ class Integer(Regular):
             label=self._label,
             underflow=self._underflow,
             overflow=self._overflow,
+        )
+
+
+class Boolean(Regular):
+    """
+    Make an axis with two bins: ``False`` and ``True``.
+
+    Modeled on ``boost_histogram.axis.Boolean``. Fills coerce input to
+    truthiness: nonzero values, including NaN (which is truthy under
+    ``astype(bool)``), count as True. The flow bins of the internal dense
+    layout therefore never fill, and the axis reports
+    ``underflow``/``overflow`` as False so ``to_boost``/``to_hist`` produce
+    a flow-less ``Boolean`` axis.
+
+    Parameters
+    ----------
+        name : str
+            Axis name.
+        label : str
+            Axis label.
+    """
+
+    def __init__(self, *, name: str = "", label: str = "") -> None:
+        super().__init__(
+            2, 0, 2, name=name, label=label, underflow=False, overflow=False
+        )
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}()"
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Bin) and not isinstance(other, Boolean):
+            return False
+        return super().__eq__(other)
+
+    def index(self, identifier: Any) -> Any:
+        """Index of an identifier, coercing values to truthiness
+
+        Nonzero values map to the True bin (dense index 2), zero to the
+        False bin (dense index 1). NaN is truthy, so it lands in the True
+        bin as in boost-histogram, not in nanflow.
+        """
+        isarray = isinstance(
+            identifier, awkward.Array | cupy.ndarray | np.ndarray | list
+        )
+        if isarray or isinstance(identifier, numbers.Number):
+            values = awkward.to_cupy(identifier)
+            return values.astype(bool).astype(np.int64) + 1
+        return super().index(identifier)
+
+    def _ireduce(self, the_slice: Any) -> slice:
+        if the_slice == slice(None):
+            return slice(None)
+        raise IndexError(
+            f"Cannot slice Boolean axis {self!r}; use to_boost/to_hist for UHI indexing"
+        )
+
+    def reduced(self, islice: slice) -> Boolean:
+        if islice == slice(None):
+            return self
+        raise IndexError(
+            f"Cannot reduce Boolean axis {self!r}; use to_boost/to_hist for UHI indexing"
         )
 
 
