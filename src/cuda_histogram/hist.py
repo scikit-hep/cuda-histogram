@@ -140,9 +140,6 @@ class Hist:
         """All sparse axes"""
         return [ax for ax in self._axes if isinstance(ax, SparseAxis)]
 
-    def _isparse(self, axis: SparseAxis) -> int:
-        return self.sparse_axes().index(axis)
-
     def _init_sumw2(self) -> None:
         self._sumw2 = {key: value.copy() for key, value in self._sumw.items()}
 
@@ -186,8 +183,9 @@ class Hist:
                 new_dims.append(ax.reduced(islice))
 
         def dense_op(array: Any) -> Any:
+            """Apply the dense slices, always returning a fresh array"""
             if not dense_idx:
-                return array
+                return array.copy()
             as_numpy = array.get()
             blocked = np.block(_assemble_blocks(as_numpy, dense_idx))
             return cupy.asarray(blocked)
@@ -222,13 +220,13 @@ class Hist:
             if existing:
                 out._sumw[new_key] += dense_op(self._sumw[sparse_key])
             else:
-                out._sumw[new_key] = dense_op(self._sumw[sparse_key]).copy()
+                out._sumw[new_key] = dense_op(self._sumw[sparse_key])
             if self._sumw2 is not None:
                 assert out._sumw2 is not None
                 if existing:
                     out._sumw2[new_key] += dense_op(self._sumw2[sparse_key])
                 else:
-                    out._sumw2[new_key] = dense_op(self._sumw2[sparse_key]).copy()
+                    out._sumw2[new_key] = dense_op(self._sumw2[sparse_key])
         return out
 
     def fill(self, *args: Any, weight: Any = None) -> None:
@@ -245,21 +243,22 @@ class Hist:
                 Provide weights.
         """
         if not all(isinstance(a, cupy.ndarray | str) for a in args):
-            raise TypeError("pass CuPy arrays")
+            raise TypeError("pass CuPy arrays (or a string per StrCategory axis)")
         if weight is not None and not isinstance(weight, cupy.ndarray):
             raise TypeError("pass CuPy arrays")
 
         if len(self._axes) != len(args):
             raise ValueError("mismatching dimensions for provided values and axes")
 
-        sparse_key = tuple(
+        indices = tuple(
             d.index(value)
             for d, value in zip(self._axes, args, strict=False)
             if isinstance(d, SparseAxis)
         )
         # an unknown category on an overflow=False axis discards the fill
-        if any(k is None for k in sparse_key):
+        if any(k is None for k in indices):
             return
+        sparse_key = typing.cast("_SparseKey", indices)
 
         if weight is not None and self._sumw2 is None:
             self._init_sumw2()
@@ -325,8 +324,7 @@ class Hist:
             self._dense_shape if flow else tuple(n - 3 for n in self._dense_shape)
         )
         sparse_shape = tuple(
-            ax.size + 1 if flow and ax.overflow else ax.size
-            for ax in self.sparse_axes()
+            ax.extent if flow else ax.size for ax in self.sparse_axes()
         )
         out = cupy.zeros(shape=sparse_shape + dense_shape, dtype=self._dtype)
         for key, array in sumw.items():
@@ -350,13 +348,9 @@ class Hist:
         ----------
         flow : bool
         """
-        if self.sparse_axes():
+        if self.sparse_axes() or not self._sumw:
             return self._stack_sparse(self._sumw, flow)
-        return (
-            self._view_dim(cupy.zeros(shape=self._dense_shape), flow)
-            if not self._sumw
-            else self._view_dim(next(iter(self._sumw.values())), flow)
-        )
+        return self._view_dim(next(iter(self._sumw.values())), flow)
 
     def variance(self, flow: bool = False) -> Any:
         """Extract the variances from this histogram.
@@ -370,7 +364,7 @@ class Hist:
         """
         if self._sumw2 is None:
             return None
-        if self.sparse_axes():
+        if self.sparse_axes() or not self._sumw2:
             return self._stack_sparse(self._sumw2, flow)
         return self._view_dim(next(iter(self._sumw2.values())), flow)
 

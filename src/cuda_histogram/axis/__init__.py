@@ -147,6 +147,11 @@ class Axis:
     def label(self, label: str) -> None:
         self._label = label
 
+    @property
+    def size(self) -> int:
+        """Number of bins, not counting any flow bins"""
+        raise NotImplementedError
+
     __hash__ = None  # type: ignore[assignment]  # mutable label, and __eq__ also accepts str
 
     def __eq__(self, other: object) -> bool:
@@ -166,7 +171,7 @@ class SparseAxis(Axis):
     SparseAxis: ABC for a sparse axis
 
     Derived should implement:
-        **index(identifier)** - return a hashable object for indexing
+        **index(identifier)** - return a bin index, or None to discard the fill
 
         **__eq__(axis)** - axis has same definition (not necessarily same bins)
 
@@ -177,7 +182,8 @@ class SparseAxis(Axis):
         **reduced(indices)** - return a new axis with only the given bins
     """
 
-    def index(self, identifier: Any) -> Any:
+    def index(self, identifier: Any) -> int | None:
+        """Bin index for an identifier; ``None`` means the fill is discarded"""
         raise NotImplementedError
 
     def _ireduce(self, the_slice: Any) -> list[int]:
@@ -187,14 +193,21 @@ class SparseAxis(Axis):
         raise NotImplementedError
 
     @property
-    def size(self) -> int:
-        """Number of bins, not counting the overflow bin"""
+    def extent(self) -> int:
+        """Number of bins, including the overflow bin if present"""
         raise NotImplementedError
 
     @property
     def overflow(self) -> bool:
         """Whether unmatched fills are counted in a trailing overflow bin"""
         raise NotImplementedError
+
+
+def _check_str(category: Any) -> None:
+    if not isinstance(category, str):
+        raise TypeError(
+            f"StrCategory only supports string categories, received {category!r}"
+        )
 
 
 class StrCategory(SparseAxis):
@@ -237,10 +250,7 @@ class StrCategory(SparseAxis):
             self._add(category)
 
     def _add(self, category: str) -> int:
-        if not isinstance(category, str):
-            raise TypeError(
-                f"StrCategory only supports string categories, received {category!r}"
-            )
+        _check_str(category)
         if category in self._indices:
             raise ValueError(f"Duplicate category {category!r}")
         index = len(self._indices)
@@ -248,7 +258,7 @@ class StrCategory(SparseAxis):
         return index
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({list(self._indices)})"
+        return f"{self.__class__.__name__}({self.identifiers()})"
 
     @property
     def growth(self) -> bool:
@@ -265,6 +275,11 @@ class StrCategory(SparseAxis):
         """Number of categories, not counting the overflow bin"""
         return len(self._indices)
 
+    @property
+    def extent(self) -> int:
+        """Number of categories, including the overflow bin if present"""
+        return self.size + 1 if self._overflow else self.size
+
     def index(self, identifier: str) -> int | None:
         """Index of a category
 
@@ -278,18 +293,16 @@ class StrCategory(SparseAxis):
         otherwise it maps to the overflow bin (index ``size``), or to
         ``None`` (meaning: discard) if ``overflow=False``.
         """
-        if not isinstance(identifier, str):
-            raise TypeError(
-                f"StrCategory only supports string categories, received {identifier!r}"
-            )
-        if identifier not in self._indices:
-            if self._growth:
-                return self._add(identifier)
-            return self.size if self._overflow else None
-        return self._indices[identifier]
+        _check_str(identifier)
+        idx = self._indices.get(identifier)
+        if idx is not None:
+            return idx
+        if self._growth:
+            return self._add(identifier)
+        return self.size if self._overflow else None
 
     def __getitem__(self, index: int) -> str:
-        return list(self._indices)[index]
+        return self.identifiers()[index]
 
     def _ireduce(self, the_slice: Any) -> list[int]:
         if isinstance(the_slice, str):
@@ -302,12 +315,8 @@ class StrCategory(SparseAxis):
                     f"Not all requested categories present in {self!r}", RuntimeWarning
                 )
             out = [k for k in the_slice if k in self._indices]
-        elif isinstance(the_slice, slice):
-            if the_slice != slice(None):
-                raise IndexError(
-                    f"Cannot understand slice {the_slice!r} on axis {self!r}"
-                )
-            out = list(self._indices)
+        elif the_slice == slice(None):
+            out = self.identifiers()
         else:
             raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
         return [self._indices[k] for k in out]
@@ -320,7 +329,7 @@ class StrCategory(SparseAxis):
             indices : list[int]
                 Category indices, usually as returned from ``StrCategory._ireduce``
         """
-        categories = list(self._indices)
+        categories = self.identifiers()
         return StrCategory(
             [categories[i] for i in indices],
             name=self._name,
@@ -357,11 +366,6 @@ class DenseAxis(Axis):
         raise NotImplementedError
 
     def reduced(self, islice: slice) -> DenseAxis:
-        raise NotImplementedError
-
-    @property
-    def size(self) -> int:
-        """Number of bins"""
         raise NotImplementedError
 
 
