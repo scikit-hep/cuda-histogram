@@ -24,16 +24,19 @@ conflict, so select exactly one.
 
 ## Testing reality
 
-CI runs on `ubuntu-latest` with **no GPU**, so `tests/test_hist_tools.py` skips
-entirely there (`pytest.importorskip("cupy")` plus a `getDeviceCount` check).
-`tests/test_dummy.py` exists only so pytest doesn't fail on an empty collection.
-Real coverage only happens on a CUDA machine — run the suite locally before
-claiming a change works.
+`.github/workflows/ci.yml` runs on `ubuntu-latest` with **no GPU**, so
+`tests/test_hist_tools.py` skips entirely there (`pytest.importorskip("cupy")`
+plus a `getDeviceCount` check). `tests/test_dummy.py` exists only so pytest
+doesn't fail on an empty collection.
 
-`.github/workflows/gpu.yml` runs the full suite on the scikit-hep self-hosted
-runners (nightly, on pushes to `main`, and on demand), matrixed over CUDA 12
-and 13. It gets CuPy from conda-forge with micromamba, so it installs the
-package without a `cuda12x`/`cuda13x` extra.
+Real coverage comes from `.github/workflows/gpu.yml`, which runs the full suite
+on the scikit-hep self-hosted CUDA runners, matrixed over CUDA 12/13 and Python
+3.10/3.14 (oldest and newest supported). It triggers nightly, on pushes to
+`main`, on demand, and on pull requests — but only same-repo PRs, since
+self-hosted runners must not run fork code. It gets CuPy from conda-forge with
+micromamba, so it installs the package without a `cuda12x`/`cuda13x` extra.
+Still run the suite locally on a CUDA machine before claiming a change works;
+PRs from a fork get no GPU coverage at all.
 
 `filterwarnings = ["error", ...]` in `pyproject.toml`, so unexpected warnings
 fail tests. mypy runs strict via pre-commit (`uv run mypy` locally); `cupy` and
