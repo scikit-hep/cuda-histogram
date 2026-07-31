@@ -21,7 +21,7 @@ env:
 
 jobs:
   gpu-tests:
-    name: CUDA ${{ matrix.cuda-version }}
+    name: CUDA ${{ matrix.cuda-version }} Python ${{ matrix.python-version }}
     # Self-hosted runners must not run code from forks.
     if: >-
       (github.event_name != 'schedule' || github.repository_owner ==
@@ -41,6 +41,10 @@ jobs:
         cuda-version:
           - 12
           - 13
+        # Oldest and newest supported Python
+        python-version:
+          - "3.10"
+          - "3.14"
 
     steps:
       - name: Clean the workspace and micromamba
@@ -58,7 +62,8 @@ jobs:
           environment-name: test-env
           init-shell: bash
           create-args: >-
-            python=3.13 cupy>=13.1 cuda-version=${{ matrix.cuda-version }}
+            python=${{ matrix.python-version }} cupy>=13.1 cuda-version=${{
+            matrix.cuda-version }}
 
       - name: Install cuda-histogram and test dependencies
         # CuPy comes from conda-forge here, so no cudaNNx extra is selected.
