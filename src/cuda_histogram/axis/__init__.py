@@ -12,10 +12,9 @@ import numpy as np
 
 __all__: list[str] = [
     "Bin",
-    # "Cat",
     "Interval",
     "Regular",
-    # "StringBin",
+    "StrCategory",
     "Variable",
 ]
 
@@ -123,68 +122,6 @@ class Interval:
         self._label = lbl
 
 
-# TODO: cleanup logic for sparse axis
-# @functools.total_ordering
-# class StringBin:
-#     """A string used to fill a sparse axis
-
-#     Totally ordered, lexicographically by name.
-
-#     Parameters
-#     ----------
-#         name : str
-#             Name of the bin, as used in `Hist.fill` calls
-#         label : str
-#             The `str` representation of this bin can be overridden by
-#             a custom label.
-#     """
-
-#     def __init__(self, name, label=None):
-#         if not isinstance(name, str):
-#             raise TypeError(
-#                 f"StringBin only supports string categories, received a {name!r}"
-#             )
-#         elif "*" in name:
-#             raise ValueError(
-#                 "StringBin does not support character '*' as it conflicts with wildcard mapping."
-#             )
-#         self._name = name
-#         self._label = label
-
-#     def __repr__(self):
-#         return f"<{self.__class__.__name__} ({self.name}) instance at 0x{id(self):0x}>"
-
-#     def __str__(self):
-#         if self._label is not None:
-#             return self._label
-#         return self._name
-
-#     def __hash__(self):
-#         return hash(self._name)
-
-#     def __lt__(self, other):
-#         return self._name < other._name
-
-#     def __eq__(self, other):
-#         if isinstance(other, StringBin):
-#             return self._name == other._name
-#         return False
-
-#     @property
-#     def name(self):
-#         """Name of this bin, *Immutable*"""
-#         return self._name
-
-#     @property
-#     def label(self):
-#         """Label of this bin, mutable"""
-#         return self._label
-
-#     @label.setter
-#     def label(self, lbl):
-#         self._label = lbl
-
-
 class Axis:
     """
     Axis: Base class for any type of axis
@@ -235,144 +172,151 @@ class SparseAxis(Axis):
 
         **__getitem__(index)** - return an identifier
 
-        **_ireduce(slice)** - return a list of hashes, slice is arbitrary
+        **_ireduce(slice)** - return a list of bin indices, slice is arbitrary
 
-    What we really want here is a hashlist with some slice sugar on top
-    It is usually the case that the identifier is already hashable,
-    in which case index and __getitem__ are trivial, but this mechanism
-    may be useful if the size of the tuple of identifiers in a
-    sparse-binned histogram becomes too large
+        **reduced(indices)** - return a new axis with only the given bins
     """
 
     def index(self, identifier: Any) -> Any:
         raise NotImplementedError
 
-    def _ireduce(self, the_slice: Any) -> Any:
+    def _ireduce(self, the_slice: Any) -> list[int]:
+        raise NotImplementedError
+
+    def reduced(self, indices: list[int]) -> SparseAxis:
+        raise NotImplementedError
+
+    @property
+    def size(self) -> int:
+        """Number of bins"""
         raise NotImplementedError
 
 
-# TODO: cleanup logic for sparse axis
-# class Cat(SparseAxis):
-#     """A category axis with name and label
+class StrCategory(SparseAxis):
+    """A categorical axis with string-valued bins.
 
-#     Parameters
-#     ----------
-#         name : str
-#             is used as a keyword in histogram filling, immutable
-#         label : str
-#             describes the meaning of the axis, can be changed
-#         sorting : {'identifier', 'placement', 'integral'}, optional
-#             Axis sorting when listing identifiers.
+    Modeled on ``boost_histogram.axis.StrCategory``. Categories are kept in
+    insertion order, and histogram storage is sparse: only filled categories
+    occupy memory.
 
-#     The number of categories is arbitrary, and can be filled sparsely
-#     Identifiers are strings
-#     """
+    Parameters
+    ----------
+        categories : Iterable[str]
+            Initial categories, in bin order.
+        name : str
+            is used as a keyword in histogram filling, immutable
+        label : str
+            describes the meaning of the axis, can be changed
+        growth : bool
+            If True, filling a category not on the axis appends it instead
+            of raising ``KeyError``.
+    """
 
-#     def __init__(self, name, label, sorting="identifier"):
-#         super().__init__(name, label)
-#         # In all cases key == value.name
-#         self._bins = {}
-#         self._sorting = sorting
-#         self._sorted = []
+    def __init__(
+        self,
+        categories: Iterable[str] = (),
+        *,
+        name: str = "",
+        label: str = "",
+        growth: bool = False,
+    ) -> None:
+        super().__init__(name, label)
+        self._indices: dict[str, int] = {}
+        self._growth = growth
+        for category in categories:
+            self._add(category)
 
-#     def index(self, identifier):
-#         """Index of a identifier or label
+    def _add(self, category: str) -> int:
+        if not isinstance(category, str):
+            raise TypeError(
+                f"StrCategory only supports string categories, received {category!r}"
+            )
+        if category in self._indices:
+            raise ValueError(f"Duplicate category {category!r}")
+        index = len(self._indices)
+        self._indices[category] = index
+        return index
 
-#         Parameters
-#         ----------
-#             identifier : str or StringBin
-#                 The identifier to lookup
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({list(self._indices)})"
 
-#         Returns a `StringBin` corresponding to the given argument (trivial in the case
-#         where a `StringBin` was passed) and saves a reference internally in the case where
-#         the identifier was not seen before by this axis.
-#         """
-#         if isinstance(identifier, StringBin):
-#             index = identifier
-#         else:
-#             index = StringBin(identifier)
-#         if index.name not in self._bins:
-#             self._bins[index.name] = index
-#             self._sorted.append(index.name)
-#             if self._sorting == "identifier":
-#                 self._sorted.sort()
-#         return self._bins[index.name]
+    @property
+    def growth(self) -> bool:
+        """Whether filling an unknown category appends it to the axis"""
+        return self._growth
 
-#     def __eq__(self, other):
-#         # Sparse, so as long as name is the same
-#         return super().__eq__(other)
+    @property
+    def size(self) -> int:
+        """Number of categories"""
+        return len(self._indices)
 
-#     def __getitem__(self, index):
-#         if not isinstance(index, StringBin):
-#             raise TypeError(f"Expected a StringBin object, got: {index!r}")
-#         identifier = index.name
-#         if identifier not in self._bins:
-#             raise KeyError("No identifier %r in this Category axis")
-#         return identifier
+    def index(self, identifier: str) -> int:
+        """Index of a category
 
-#     def _ireduce(self, the_slice):
-#         out = None
-#         if isinstance(the_slice, StringBin):
-#             out = [the_slice.name]
-#         elif isinstance(the_slice, re.Pattern):
-#             out = [k for k in self._sorted if the_slice.match(k)]
-#         elif isinstance(the_slice, str):
-#             pattern = "^" + re.escape(the_slice).replace(r"\*", ".*") + "$"
-#             m = re.compile(pattern)
-#             out = [k for k in self._sorted if m.match(k)]
-#         elif isinstance(the_slice, list):
-#             if not all(k in self._sorted for k in the_slice):
-#                 warnings.warn(
-#                     f"Not all requested indices present in {self!r}", RuntimeWarning
-#                 )
-#             out = [k for k in self._sorted if k in the_slice]
-#         elif isinstance(the_slice, slice):
-#             if the_slice.step is not None:
-#                 raise IndexError("Not sure how to use slice step for categories...")
-#             start, stop = 0, len(self._sorted)
-#             if isinstance(the_slice.start, str):
-#                 start = self._sorted.index(the_slice.start)
-#             else:
-#                 start = the_slice.start
-#             if isinstance(the_slice.stop, str):
-#                 stop = self._sorted.index(the_slice.stop)
-#             else:
-#                 stop = the_slice.stop
-#             out = self._sorted[start:stop]
-#         else:
-#             raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
-#         return [self._bins[k] for k in out]
+        Parameters
+        ----------
+            identifier : str
+                The category to look up.
 
-#     @property
-#     def size(self):
-#         """Number of bins"""
-#         return len(self._bins)
+        Returns the integer bin index of the category. If the axis was
+        constructed with ``growth=True``, an unknown category is appended
+        instead of raising ``KeyError``.
+        """
+        if not isinstance(identifier, str):
+            raise TypeError(
+                f"StrCategory only supports string categories, received {identifier!r}"
+            )
+        if identifier not in self._indices:
+            if not self._growth:
+                raise KeyError(
+                    f"No category {identifier!r} in axis {self!r} (pass growth=True to add categories when filling)"
+                )
+            return self._add(identifier)
+        return self._indices[identifier]
 
-#     @property
-#     def sorting(self):
-#         """Sorting definition to adhere to
+    def __getitem__(self, index: int) -> str:
+        return list(self._indices)[index]
 
-#         See `Cat` constructor for possible values
-#         """
-#         return self._sorting
+    def _ireduce(self, the_slice: Any) -> list[int]:
+        if isinstance(the_slice, str):
+            if the_slice not in self._indices:
+                raise KeyError(f"No category {the_slice!r} in axis {self!r}")
+            out = [the_slice]
+        elif isinstance(the_slice, list):
+            if not all(k in self._indices for k in the_slice):
+                warnings.warn(
+                    f"Not all requested categories present in {self!r}", RuntimeWarning
+                )
+            out = [k for k in the_slice if k in self._indices]
+        elif isinstance(the_slice, slice):
+            if the_slice != slice(None):
+                raise IndexError(
+                    f"Cannot understand slice {the_slice!r} on axis {self!r}"
+                )
+            out = list(self._indices)
+        else:
+            raise IndexError(f"Cannot understand slice {the_slice!r} on axis {self!r}")
+        return [self._indices[k] for k in out]
 
-#     @sorting.setter
-#     def sorting(self, newsorting):
-#         if newsorting == "placement":
-#             # not much we can do about already inserted values
-#             pass
-#         elif newsorting == "identifier":
-#             self._sorted.sort()
-#         elif newsorting == "integral":
-#             # this will be checked in any Hist.identifiers() call accessing this axis
-#             pass
-#         else:
-#             raise AttributeError(f"Invalid axis sorting type: {newsorting}")
-#         self._sorting = newsorting
+    def reduced(self, indices: list[int]) -> StrCategory:
+        """Return a new axis with only the categories at the given indices
 
-#     def identifiers(self):
-#         """List of `StringBin` identifiers"""
-#         return [self._bins[k] for k in self._sorted]
+        Parameters
+        ----------
+            indices : list[int]
+                Category indices, usually as returned from ``StrCategory._ireduce``
+        """
+        categories = list(self._indices)
+        return StrCategory(
+            [categories[i] for i in indices],
+            name=self._name,
+            label=self._label,
+            growth=self._growth,
+        )
+
+    def identifiers(self) -> list[str]:
+        """List of string categories"""
+        return list(self._indices)
 
 
 class DenseAxis(Axis):

@@ -9,10 +9,10 @@ import numpy as np
 
 from cuda_histogram.axis import (
     Axis,
-    # Cat,
     DenseAxis,
     Regular,
     SparseAxis,
+    StrCategory,
     Variable,
     _overflow_behavior,
 )
@@ -30,8 +30,8 @@ class _MaybeSumSlice(typing.NamedTuple):
     sum: bool
 
 
-# tuple of sparse-axis indices, empty while sparse axes are disabled
-_SparseKey = tuple[Any, ...]
+# tuple of sparse-axis bin indices, one entry per sparse axis
+_SparseKey = tuple[int, ...]
 
 
 def _assemble_blocks(array: Any, ndslice: list[Any], depth: int = 0) -> Any:
@@ -156,7 +156,7 @@ class Hist:
         if (
             not isinstance(keys, slice)
             and keys is not Ellipsis
-            and not isinstance(keys, int | float | tuple)
+            and not isinstance(keys, int | float | str | list | tuple)
         ):
             raise ValueError("use to_boost/to_hist to access other UHI functionalities")
         if not isinstance(keys, tuple):
@@ -176,8 +176,9 @@ class Hist:
         new_dims: list[Axis] = []
         for s, ax in zip(keys, self._axes, strict=False):
             if isinstance(ax, SparseAxis):
-                sparse_idx.append(ax._ireduce(s))
-                new_dims.append(ax)
+                indices = ax._ireduce(s)
+                sparse_idx.append(indices)
+                new_dims.append(ax.reduced(indices))
             else:
                 assert isinstance(ax, DenseAxis)
                 islice = ax._ireduce(s)
@@ -185,6 +186,8 @@ class Hist:
                 new_dims.append(ax.reduced(islice))
 
         def dense_op(array: Any) -> Any:
+            if not dense_idx:
+                return array
             as_numpy = array.get()
             blocked = np.block(_assemble_blocks(as_numpy, dense_idx))
             return cupy.asarray(blocked)
@@ -193,21 +196,23 @@ class Hist:
         if self._sumw2 is not None:
             out._init_sumw2()
         for sparse_key in self._sumw:
-            if not all(
-                k in idx for k, idx in zip(sparse_key, sparse_idx, strict=False)
-            ):
+            if not all(k in idx for k, idx in zip(sparse_key, sparse_idx, strict=True)):
                 continue
-            existing = sparse_key in out._sumw
+            # remap to the reduced axes' bin indices
+            new_key = tuple(
+                idx.index(k) for k, idx in zip(sparse_key, sparse_idx, strict=True)
+            )
+            existing = new_key in out._sumw
             if existing:
-                out._sumw[sparse_key] += dense_op(self._sumw[sparse_key])
+                out._sumw[new_key] += dense_op(self._sumw[sparse_key])
             else:
-                out._sumw[sparse_key] = dense_op(self._sumw[sparse_key]).copy()
+                out._sumw[new_key] = dense_op(self._sumw[sparse_key]).copy()
             if self._sumw2 is not None:
                 assert out._sumw2 is not None
                 if existing:
-                    out._sumw2[sparse_key] += dense_op(self._sumw2[sparse_key])
+                    out._sumw2[new_key] += dense_op(self._sumw2[sparse_key])
                 else:
-                    out._sumw2[sparse_key] = dense_op(self._sumw2[sparse_key]).copy()
+                    out._sumw2[new_key] = dense_op(self._sumw2[sparse_key]).copy()
         return out
 
     def fill(self, *args: Any, weight: Any = None) -> None:
@@ -216,8 +221,9 @@ class Hist:
 
         Parameters
         ----------
-            *args : cupy.ndarray
-                Provide one value or array per dimension.
+            *args : cupy.ndarray or str
+                Provide one value or array per dimension; a ``StrCategory``
+                axis takes a single string category.
             weight : cupy.ndarray
                 Provide weights.
         """
@@ -289,28 +295,35 @@ class Hist:
         else:
             return arr[tuple(_overflow_behavior(flow) for _ in range(self.dense_dim()))]
 
+    def _stack_sparse(self, sumw: dict[_SparseKey, Any], flow: bool) -> Any:
+        """Stack per-sparse-key storage into one array, axes in histogram order
+
+        Sparse-axis bins that were never filled are zero.
+        """
+        dense_shape = (
+            self._dense_shape if flow else tuple(n - 3 for n in self._dense_shape)
+        )
+        sparse_shape = tuple(ax.size for ax in self.sparse_axes())
+        out = cupy.zeros(shape=sparse_shape + dense_shape, dtype=self._dtype)
+        for key, array in sumw.items():
+            out[key] = self._view_dim(array, flow)
+        order = [i for i, ax in enumerate(self._axes) if isinstance(ax, SparseAxis)]
+        order += [i for i, ax in enumerate(self._axes) if isinstance(ax, DenseAxis)]
+        return cupy.moveaxis(out, tuple(range(len(order))), tuple(order))
+
     def values(self, flow: bool = False) -> Any:
         """Extract the values from this histogram.
+
+        Sparse (categorical) axes appear as ordinary dimensions of the
+        returned array, with categories in axis order; ``flow`` only affects
+        dense axes.
 
         Parameters
         ----------
         flow : bool
         """
-
-        # TODO: cleanup logic for sparse axis
-        # out = {}
-        # for sparse_key in self._sumw:
-        #     id_key = tuple(ax[k] for ax, k in zip(self.sparse_axes(), sparse_key))
-        #     if sumw2:
-        #         if self._sumw2 is not None:
-        #             w2 = self._view_dim(self._sumw2[sparse_key])
-        #         else:
-        #             w2 = self._view_dim(self._sumw[sparse_key])
-        #         out[id_key] = (self._view_dim(self._sumw[sparse_key]), w2)
-        #     else:
-        #         out[id_key] = self._view_dim(self._sumw[sparse_key])
-        # return out
-
+        if self.sparse_axes():
+            return self._stack_sparse(self._sumw, flow)
         return (
             self._view_dim(cupy.zeros(shape=self._dense_shape), flow)
             if not self._sumw
@@ -320,48 +333,25 @@ class Hist:
     def variance(self, flow: bool = False) -> Any:
         """Extract the variances from this histogram.
 
+        ``None`` if no weighted fills have happened; otherwise shaped like
+        ``values(flow)``.
+
         Parameters
         ----------
         flow : bool
         """
-        return (
-            None
-            if self._sumw2 is None
-            else self._view_dim(next(iter(self._sumw2.values())), flow)
-        )
-
-    # TODO: cleanup logic for sparse axis
-    # def identifiers(self, axis, overflow="none"):
-    #     """Return a list of identifiers for an axis
-
-    #     Parameters
-    #     ----------
-    #         axis
-    #             Axis object
-    #         overflow
-    #             See `sum` description for meaning of allowed values
-    #     """
-    #     if isinstance(axis, SparseAxis):
-    #         out = []
-    #         isparse = self._isparse(axis)
-    #         for identifier in axis.identifiers():
-    #             if any(k[isparse] == axis.index(identifier) for k in self._sumw):
-    #                 out.append(identifier)
-    #         if axis.sorting == "integral":
-    #             hproj = {
-    #                 key[0]: integral
-    #                 for key, integral in self.project(axis).values().items()
-    #             }
-    #             out.sort(key=lambda k: hproj[k.name])
-    #         return out
-    #     elif isinstance(axis, DenseAxis):
-    #         return axis.identifiers(overflow=overflow)
+        if self._sumw2 is None:
+            return None
+        if self.sparse_axes():
+            return self._stack_sparse(self._sumw2, flow)
+        return self._view_dim(next(iter(self._sumw2.values())), flow)
 
     def to_boost(self) -> boost_histogram.Histogram[Any]:
         """
         Convert this cuda_histogram object to a boost_histogram object.
 
         underflow and overflow are set True and nanflow is lost in the conversion.
+        Categorical axes convert to growable ``StrCategory`` axes.
 
         Appropriate boost-histogram axis and storage are automatically chosen.
         All the arguments of cuda-histogram's axis and histogram are passed down.
@@ -370,7 +360,9 @@ class Hist:
         import hist  # noqa: PLC0415
 
         # hist's axes subclass boost-histogram's and carry name/label properly
-        newaxes: list[hist.axis.Regular | hist.axis.Variable] = []
+        newaxes: list[
+            hist.axis.Regular | hist.axis.Variable | hist.axis.StrCategory
+        ] = []
         for axis in self.axes():
             if isinstance(axis, Regular):
                 newaxes.append(
@@ -394,17 +386,16 @@ class Hist:
                         label=axis.label,
                     )
                 )
-            # TODO: cleanup logic for sparse axis
-            # elif isinstance(axis, Cat):
-            #     identifiers = self.identifiers(axis)
-            #     newaxis = boost_histogram.axis.StrCategory(
-            #         [x.name for x in identifiers],
-            #         growth=True,
-            #     )
-            #     newaxis.name = axis.name
-            #     newaxis.label = axis.label
-            #     newaxis.bin_labels = [x.label for x in identifiers]
-            #     newaxes.append(newaxis)
+            elif isinstance(axis, StrCategory):
+                # growth=True so the axis has no overflow slot
+                newaxes.append(
+                    hist.axis.StrCategory(
+                        axis.identifiers(),
+                        growth=True,
+                        name=axis.name,
+                        label=axis.label,
+                    )
+                )
 
         storage: boost_histogram.storage.Storage
         if self._sumw2 is None:
@@ -416,40 +407,21 @@ class Hist:
         out.label = self.label  # type: ignore[attr-defined]
 
         view = out.view(flow=True)
-        nonan = [slice(None, -1, None)] * (len(newaxes))
+        # drop the nanflow bin of dense axes; category axes have no flow bins
+        nonan = tuple(
+            slice(None) if isinstance(axis, SparseAxis) else slice(None, -1)
+            for axis in self.axes()
+        )
         if self._sumw2 is None:
-            view[:] = self.values(flow=True)[(*nonan,)].get()
+            view[:] = self.values(flow=True)[nonan].get()
         else:
             view[:] = cupy.stack(
                 (
-                    self.values(flow=True)[(*nonan,)],
-                    self.variance(flow=True)[(*nonan,)],
+                    self.values(flow=True)[nonan],
+                    self.variance(flow=True)[nonan],
                 ),
                 axis=len(newaxes),
             ).get()
-
-        # TODO: cleanup logic for sparse axis
-        # def expandkey(key):
-        #     kiter = iter(key)
-        #     for ax in newaxes:
-        #         if isinstance(ax, boost_histogram.axis.StrCategory):
-        #             yield ax.index(next(kiter))
-        #         else:
-        #             yield slice(None)
-
-        # if self._sumw2 is None:
-        #     values = self.values(overflow="all")
-        #     for sparse_key, sumw in values.items():
-        #         index = tuple(expandkey(sparse_key))
-        #         view = out.view(flow=True)
-        #         view[index] = sumw.get()
-        # else:
-        #     values = self.values(sumw2=True, overflow="all")
-        #     for sparse_key, (sumw, sumw2) in values.items():
-        #         index = tuple(expandkey(sparse_key))
-        #         view = out.view(flow=True)
-        #         view[index].value = sumw.get()
-        #         view[index].variance = sumw2.get()
 
         return out
 

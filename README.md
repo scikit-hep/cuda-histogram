@@ -28,6 +28,7 @@ Main features of cuda-histogram:
       - `centers()`
       - `index(...)`
       - ...
+    - `StrCategory` axis (with sparse storage and optional `growth`)
   - Histogram
     - `fill(..., weight=...)` (including `Nan` flow)
     - simple indexing with slicing (see example below)
@@ -39,8 +40,6 @@ Main features of cuda-histogram:
 
 Near future goals for the package -
 
-- Implement support for `Categorical` axes (exists internally but need
-  refactoring to match boost-histogram's API)
 - Improve indexing (`__getitem__`) to exactly match boost-histogram's API
 
 ## Installation

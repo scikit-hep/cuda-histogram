@@ -133,7 +133,8 @@ def test_partial_indexing() -> None:
         h[0.1, 3, 5]
     with pytest.raises(IndexError):
         h[..., ...]
-    with pytest.raises(ValueError):
+    # strings are category selections, meaningless on a dense axis
+    with pytest.raises(IndexError):
         h["x"]
 
 
@@ -260,6 +261,167 @@ def test_cpu_conversion() -> None:
     assert h.values().shape == dummy.values().shape
     assert h[bh.underflow, bh.underflow].variance == 4.0  # type: ignore[union-attr]
     assert h.storage_type == bh.storage.Weight
+
+
+def _cat_axis(h: cuda_histogram.Hist, i: int = 0) -> cuda_histogram.axis.StrCategory:
+    ax = h.axes()[i]
+    assert isinstance(ax, cuda_histogram.axis.StrCategory)
+    return ax
+
+
+def test_str_category_axis() -> None:
+    ax = cuda_histogram.axis.StrCategory(["one", "two"], name="s", label="sample")
+    assert ax.size == 2
+    assert ax.name == "s"
+    assert ax.label == "sample"
+    assert not ax.growth
+    assert ax.index("one") == 0
+    assert ax.index("two") == 1
+    assert ax[0] == "one"
+    assert ax[-1] == "two"
+    assert ax.identifiers() == ["one", "two"]
+    assert repr(ax) == "StrCategory(['one', 'two'])"
+    with pytest.raises(KeyError):
+        ax.index("three")
+    assert ax.size == 2
+    with pytest.raises(TypeError):
+        ax.index(1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Duplicate"):
+        cuda_histogram.axis.StrCategory(["a", "a"])
+
+    grow = cuda_histogram.axis.StrCategory(growth=True)
+    assert grow.size == 0
+    assert grow.index("b") == 0
+    assert grow.index("a") == 1
+    assert grow.index("b") == 0
+    assert grow.identifiers() == ["b", "a"]
+
+
+def test_str_category_fill() -> None:
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.StrCategory(growth=True, name="sample"),
+        cuda_histogram.axis.Regular(4, 0, 1, name="x"),
+    )
+    assert h.values().shape == (0, 4)
+    assert h.dense_dim() == 1
+    assert h.sparse_axes() == [h.axes()[0]]
+
+    h.fill("ttbar", cp.array([0.1, 0.3, 0.3]))
+    h.fill("qcd", cp.array([0.6]))
+    assert h.values().shape == (2, 4)
+    assert (h.values() == cp.array([[1, 2, 0, 0], [0, 0, 1, 0]])).all()
+    assert h.values(flow=True).shape == (2, 7)
+    assert (h.values(flow=True).sum(axis=1) == cp.array([3, 1])).all()
+    assert h.variance() is None
+
+    h.fill("qcd", cp.array([0.6]), weight=cp.array([2.0]))
+    assert h.variance() is not None
+    assert (h.values() == cp.array([[1, 2, 0, 0], [0, 0, 3, 0]])).all()
+    assert (h.variance() == cp.array([[1, 2, 0, 0], [0, 0, 5, 0]])).all()
+
+    # unknown category on a non-growing axis
+    fixed = cuda_histogram.Hist(
+        cuda_histogram.axis.StrCategory(["a", "b"], name="sample"),
+        cuda_histogram.axis.Regular(4, 0, 1, name="x"),
+    )
+    assert fixed.values().shape == (2, 4)
+    fixed.fill("b", cp.array([0.1]))
+    assert (fixed.values() == cp.array([[0, 0, 0, 0], [1, 0, 0, 0]])).all()
+    with pytest.raises(KeyError):
+        fixed.fill("c", cp.array([0.1]))
+
+
+def test_str_category_only() -> None:
+    h = cuda_histogram.Hist(cuda_histogram.axis.StrCategory(growth=True, name="s"))
+    h.fill("a")
+    h.fill("a")
+    h.fill("b", weight=cp.array([3.0]))
+    assert (h.values() == cp.array([2.0, 3.0])).all()
+    assert (h.variance() == cp.array([2.0, 9.0])).all()
+
+    sel = h["b"]
+    assert _cat_axis(sel).identifiers() == ["b"]
+    assert (sel.values() == cp.array([3.0])).all()
+
+
+def test_str_category_getitem() -> None:
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.StrCategory(growth=True, name="sample"),
+        cuda_histogram.axis.Regular(4, 0, 1, name="x"),
+    )
+    h.fill("ttbar", cp.array([0.1, 0.3, 0.3]))
+    h.fill("qcd", cp.array([0.6]), weight=cp.array([2.0]))
+    h.fill("zjets", cp.array([0.9, 0.9]))
+
+    sel = h["qcd"]
+    assert isinstance(sel, cuda_histogram.Hist)
+    assert _cat_axis(sel).identifiers() == ["qcd"]
+    assert sel.values().shape == (1, 4)
+    assert (sel.values()[0] == h.values()[1]).all()
+    assert (sel.variance()[0] == h.variance()[1]).all()
+
+    # list selection keeps the requested order
+    sub = h[["zjets", "ttbar"], :]
+    assert _cat_axis(sub).identifiers() == ["zjets", "ttbar"]
+    assert (sub.values() == cp.stack([h.values()[2], h.values()[0]])).all()
+
+    # a full slice keeps everything; dense slicing works alongside
+    assert (h[:, :].values() == h.values()).all()
+    assert (h["ttbar", 0.3].values()[0, 0] == h.values()[0, 1]).all()
+
+    with pytest.raises(KeyError):
+        h["nope"]
+    with pytest.warns(RuntimeWarning):
+        empty = h[["nope"], :]
+    assert empty.values().shape == (0, 4)
+    with pytest.raises(IndexError):
+        h[0.5, :]
+
+
+def test_str_category_axis_order() -> None:
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.Regular(3, 0, 1, name="x"),
+        cuda_histogram.axis.StrCategory(growth=True, name="s"),
+    )
+    h.fill(cp.array([0.1, 0.5]), "a")
+    h.fill(cp.array([0.9]), "b")
+    assert h.values().shape == (3, 2)
+    assert (h.values()[:, 0] == cp.array([1, 1, 0])).all()
+    assert (h.values()[:, 1] == cp.array([0, 0, 1])).all()
+
+    out = h.to_boost()
+    assert (out.values() == h.values().get()).all()
+
+
+def test_str_category_to_boost() -> None:
+    import boost_histogram as bh
+
+    h = cuda_histogram.Hist(
+        cuda_histogram.axis.StrCategory(growth=True, name="dataset", label="Sample"),
+        cuda_histogram.axis.Regular(3, 0, 1, name="x"),
+        label="events",
+    )
+    h.fill("ttbar", cp.array([0.1, 0.5, 1.5]))
+    h.fill("qcd", cp.array([-0.5, 0.9]))
+
+    out = h.to_boost()
+    assert isinstance(out.axes[0], bh.axis.StrCategory)
+    assert list(out.axes[0]) == ["ttbar", "qcd"]
+    assert out.axes[0].name == "dataset"
+    assert out.axes[0].label == "Sample"
+    assert out.storage_type == bh.storage.Double
+    assert (out.values() == h.values().get()).all()
+    assert out[bh.loc("ttbar"), bh.overflow] == 1.0
+    assert out[bh.loc("qcd"), bh.underflow] == 1.0
+
+    h.fill("qcd", cp.array([0.9]), weight=cp.array([2.0]))
+    out = h.to_boost()
+    assert out.storage_type == bh.storage.Weight
+    assert (out.values() == h.values().get()).all()
+    assert (out.variances() == h.variance().get()).all()
+
+    hh = h.to_hist()
+    assert (hh.values() == h.values().get()).all()
 
 
 def test_hist_conversion() -> None:
