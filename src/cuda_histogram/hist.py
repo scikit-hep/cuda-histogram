@@ -196,6 +196,7 @@ class Hist:
         if self._sumw2 is not None:
             out._init_sumw2()
         sparse_axes = self.sparse_axes()
+        remaps = [{old: new for new, old in enumerate(idx)} for idx in sparse_idx]
 
         def remap_key(sparse_key: _SparseKey) -> _SparseKey | None:
             """Old sparse key -> reduced axes' bin indices, None to drop
@@ -204,11 +205,11 @@ class Hist:
             deselected categories are dropped, as in boost-histogram.
             """
             new_key = []
-            for k, idx, ax in zip(sparse_key, sparse_idx, sparse_axes, strict=True):
-                if k in idx:
-                    new_key.append(idx.index(k))
+            for k, remap, ax in zip(sparse_key, remaps, sparse_axes, strict=True):
+                if k in remap:
+                    new_key.append(remap[k])
                 elif ax.overflow and k == ax.size:
-                    new_key.append(len(idx))
+                    new_key.append(len(remap))
                 else:
                     return None
             return tuple(new_key)
@@ -237,8 +238,9 @@ class Hist:
         Parameters
         ----------
             *args : cupy.ndarray or str
-                Provide one value or array per dimension; a ``StrCategory``
-                axis takes a single string category.
+                Provide one CuPy array (0-d is fine) per dense axis and a
+                single string category per ``StrCategory`` axis; plain
+                Python numbers are not accepted.
             weight : cupy.ndarray
                 Provide weights.
         """
