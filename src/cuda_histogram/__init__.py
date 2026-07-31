@@ -14,6 +14,6 @@ from cuda_histogram.hist import Hist
 
 __all__: list[str] = [
     "Hist",
-    "axis",
     "__version__",
+    "axis",
 ]

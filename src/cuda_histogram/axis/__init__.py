@@ -10,12 +10,12 @@ import cupy
 import numpy as np
 
 __all__: list[str] = [
-    "Regular",
-    "Variable",
+    "Bin",
     # "Cat",
     "Interval",
+    "Regular",
     # "StringBin",
-    "Bin",
+    "Variable",
 ]
 
 # bounds are float64 so integer input does not truncate them; NaN maps to nanflow
@@ -208,6 +208,8 @@ class Axis:
     @label.setter
     def label(self, label):
         self._label = label
+
+    __hash__ = None  # mutable label, and __eq__ also accepts str
 
     def __eq__(self, other):
         if isinstance(other, Axis):
@@ -516,6 +518,8 @@ class Bin(DenseAxis):
                 f"Axis {self!r} has no interval that fully contains identifier {identifier!r}"
             )
         raise TypeError("Request bin indices with a identifier or 1-D array only")
+
+    __hash__ = None
 
     def __eq__(self, other):
         if isinstance(other, DenseAxis):

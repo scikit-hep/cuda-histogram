@@ -347,8 +347,8 @@ class Hist:
         Appropriate boost-histogram axis and storage are automatically chosen.
         All the arguments of cuda-histogram's axis and histogram are passed down.
         """
-        import boost_histogram
-        import hist
+        import boost_histogram  # noqa: PLC0415
+        import hist  # noqa: PLC0415
 
         # hist's axes subclass boost-histogram's and carry name/label properly
         newaxes = []
@@ -435,6 +435,6 @@ class Hist:
 
     def to_hist(self):
         """Convert this cuda_histogram object to a hist object"""
-        import hist
+        import hist  # noqa: PLC0415
 
         return hist.Hist(self.to_boost(), name=self.name)
