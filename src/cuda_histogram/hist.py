@@ -10,6 +10,7 @@ import numpy as np
 from cuda_histogram.axis import (
     Axis,
     DenseAxis,
+    Integer,
     Regular,
     SparseAxis,
     StrCategory,
@@ -384,10 +385,25 @@ class Hist:
 
         # hist's axes subclass boost-histogram's and carry name/label properly
         newaxes: list[
-            hist.axis.Regular | hist.axis.Variable | hist.axis.StrCategory
+            hist.axis.Regular
+            | hist.axis.Integer
+            | hist.axis.Variable
+            | hist.axis.StrCategory
         ] = []
         for axis in self.axes():
-            if isinstance(axis, Regular):
+            # Integer subclasses Regular, so it must be checked first
+            if isinstance(axis, Integer):
+                newaxes.append(
+                    hist.axis.Integer(
+                        axis._lo,
+                        axis._hi,
+                        underflow=True,
+                        overflow=True,
+                        name=axis.name,
+                        label=axis.label,
+                    )
+                )
+            elif isinstance(axis, Regular):
                 newaxes.append(
                     hist.axis.Regular(
                         axis._bins,

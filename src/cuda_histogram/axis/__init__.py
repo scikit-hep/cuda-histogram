@@ -12,6 +12,7 @@ import numpy as np
 
 __all__: list[str] = [
     "Bin",
+    "Integer",
     "Interval",
     "Regular",
     "StrCategory",
@@ -710,6 +711,63 @@ class Regular(Bin):
             ihi = islice.stop - 1
         bins = ihi - ilo
         return Regular(bins, lo, hi, name=self._name, label=self._label)
+
+
+class Integer(Regular):
+    """
+    Make an axis with unit-width integer bins from start (inclusive)
+    to stop (exclusive), modeled on ``boost_histogram.axis.Integer``.
+
+    Parameters
+    ----------
+        start : int
+            The first bin value, inclusive.
+        stop : int
+            One past the last bin value (there are ``stop - start`` bins).
+        name : str
+            Axis name.
+        label : str
+            Axis label.
+
+    Float fills bin by floor: any value in ``[v, v + 1)`` lands in the
+    bin for integer ``v``.
+    """
+
+    def __init__(
+        self,
+        start: int,
+        stop: int,
+        *,
+        name: str = "",
+        label: str = "",
+    ) -> None:
+        start = int(start)
+        stop = int(stop)
+        if stop <= start:
+            raise ValueError(f"stop ({stop}) must be greater than start ({start})")
+        super().__init__(stop - start, start, stop, name=name, label=label)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self._lo}, {self._hi})"
+
+    def reduced(self, islice: slice) -> Integer:
+        """
+        Return a new axis with reduced binning
+        The new binning corresponds to the slice made on this axis.
+        Overflow will be taken care of by ``Hist.__getitem__``
+
+        Parameters
+        ----------
+            islice : slice
+                ``islice.start`` and ``islice.stop`` should be None or within ``[1, ax.size() - 1]``
+                This slice is usually as returned from ``Bin._ireduce``
+        """
+        reduced = super().reduced(islice)
+        if reduced is self:
+            return self
+        return Integer(
+            int(reduced._lo), int(reduced._hi), name=self._name, label=self._label
+        )
 
 
 class Variable(Bin):
