@@ -36,8 +36,8 @@ and 13. It gets CuPy from conda-forge with micromamba, so it installs the
 package without a `cuda12x`/`cuda13x` extra.
 
 `filterwarnings = ["error", ...]` in `pyproject.toml`, so unexpected warnings
-fail tests. mypy is configured strict but its pre-commit hook is commented out,
-so it is not enforced anywhere.
+fail tests. mypy runs strict via pre-commit (`uv run mypy` locally); `cupy` and
+`awkward` ship no stubs, so anything touching them is `Any`.
 
 ## Architecture
 
