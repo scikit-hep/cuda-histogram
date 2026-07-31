@@ -369,6 +369,16 @@ class DenseAxis(Axis):
     def reduced(self, islice: slice) -> DenseAxis:
         raise NotImplementedError
 
+    @property
+    def underflow(self) -> bool:
+        """Whether fills below the first bin edge are counted"""
+        return True
+
+    @property
+    def overflow(self) -> bool:
+        """Whether fills at or above the last bin edge are counted"""
+        return True
+
 
 class Bin(DenseAxis):
     """Super class for dense axes.
@@ -388,10 +398,18 @@ class Bin(DenseAxis):
             is used as a keyword in histogram filling, immutable
         label : str
             describes the meaning of the axis, can be changed
+        underflow : bool
+            If False, fills below ``lo`` are discarded instead of counted.
+        overflow : bool
+            If False, fills at or above ``hi`` are discarded instead of
+            counted.  NaN always lands in the nanflow bin, regardless.
 
     This axis will generate frequencies for n+3 bins, special bin indices:
     ``0 = underflow, n+1 = overflow, n+2 = nanflow``
     Bin boundaries are [lo, hi)
+
+    The flow bins are always present in the dense storage layout (and thus in
+    ``values(flow=True)``); a disabled flow bin simply stays empty.
     """
 
     def __init__(
@@ -402,6 +420,8 @@ class Bin(DenseAxis):
         *,
         name: str = "",
         label: str = "",
+        underflow: bool = True,
+        overflow: bool = True,
     ) -> None:
         # _bins is the number of bins when uniform, else the array of edges
         self._bins: Any
@@ -437,6 +457,18 @@ class Bin(DenseAxis):
             )
         self._label = label
         self._name = name
+        self._underflow = underflow
+        self._overflow = overflow
+
+    @property
+    def underflow(self) -> bool:
+        """Whether fills below the first bin edge are counted"""
+        return self._underflow
+
+    @property
+    def overflow(self) -> bool:
+        """Whether fills at or above the last bin edge are counted"""
+        return self._overflow
 
     @property
     def _nanflow_index(self) -> int:
@@ -476,6 +508,9 @@ class Bin(DenseAxis):
     def __setstate__(self, d: dict[str, Any]) -> None:
         if "_interval_bins" in d and "_bin_names" not in d:
             d["_bin_names"] = np.full(d["_interval_bins"][:-1].size, None)
+        # pickles predating the flow toggles
+        d.setdefault("_underflow", True)
+        d.setdefault("_overflow", True)
         self.__dict__ = d
 
     def index(self, identifier: Any) -> Any:
@@ -523,6 +558,11 @@ class Bin(DenseAxis):
             if not super().__eq__(other):
                 return False
             if self._uniform != other._uniform:
+                return False
+            if (self._underflow, self._overflow) != (
+                other._underflow,
+                other._overflow,
+            ):
                 return False
             if self._uniform:
                 return bool(self._bins == other._bins)
@@ -647,8 +687,7 @@ class Bin(DenseAxis):
 
 class Regular(Bin):
     """
-    Make a regular axis with nice keyword arguments for underflow,
-    overflow, and growth.
+    Make a regular axis with uniform binning.
 
     Parameters
     ----------
@@ -662,6 +701,11 @@ class Regular(Bin):
             Axis name.
         label : str
             Axis label.
+        underflow : bool
+            If False, fills below ``start`` are discarded.
+        overflow : bool
+            If False, fills at or above ``stop`` are discarded (NaN still
+            lands in the nanflow bin).
     """
 
     def __init__(
@@ -672,6 +716,8 @@ class Regular(Bin):
         *,
         name: str = "",
         label: str = "",
+        underflow: bool = True,
+        overflow: bool = True,
     ) -> None:
         super().__init__(
             bins,
@@ -679,6 +725,8 @@ class Regular(Bin):
             stop,
             name=name,
             label=label,
+            underflow=underflow,
+            overflow=overflow,
         )
 
     def reduced(self, islice: slice) -> Regular:
@@ -710,7 +758,15 @@ class Regular(Bin):
             hi = self._lo + (islice.stop - 1) * (self._hi - self._lo) / self._bins
             ihi = islice.stop - 1
         bins = ihi - ilo
-        return Regular(bins, lo, hi, name=self._name, label=self._label)
+        return Regular(
+            bins,
+            lo,
+            hi,
+            name=self._name,
+            label=self._label,
+            underflow=self._underflow,
+            overflow=self._overflow,
+        )
 
 
 class Integer(Regular):
@@ -728,6 +784,11 @@ class Integer(Regular):
             Axis name.
         label : str
             Axis label.
+        underflow : bool
+            If False, fills below ``start`` are discarded.
+        overflow : bool
+            If False, fills at or above ``stop`` are discarded (NaN still
+            lands in the nanflow bin).
 
     Float fills bin by floor: any value in ``[v, v + 1)`` lands in the
     bin for integer ``v``.
@@ -740,12 +801,22 @@ class Integer(Regular):
         *,
         name: str = "",
         label: str = "",
+        underflow: bool = True,
+        overflow: bool = True,
     ) -> None:
         start = int(start)
         stop = int(stop)
         if stop <= start:
             raise ValueError(f"stop ({stop}) must be greater than start ({start})")
-        super().__init__(stop - start, start, stop, name=name, label=label)
+        super().__init__(
+            stop - start,
+            start,
+            stop,
+            name=name,
+            label=label,
+            underflow=underflow,
+            overflow=overflow,
+        )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._lo}, {self._hi})"
@@ -766,7 +837,12 @@ class Integer(Regular):
         if reduced is self:
             return self
         return Integer(
-            int(reduced._lo), int(reduced._hi), name=self._name, label=self._label
+            int(reduced._lo),
+            int(reduced._hi),
+            name=self._name,
+            label=self._label,
+            underflow=self._underflow,
+            overflow=self._overflow,
         )
 
 
@@ -783,6 +859,11 @@ class Variable(Bin):
             Axis name.
         label : str
             Axis label.
+        underflow : bool
+            If False, fills below the first edge are discarded.
+        overflow : bool
+            If False, fills at or above the last edge are discarded (NaN
+            still lands in the nanflow bin).
     """
 
     def __init__(
@@ -791,8 +872,12 @@ class Variable(Bin):
         *,
         name: str = "",
         label: str = "",
+        underflow: bool = True,
+        overflow: bool = True,
     ) -> None:
-        super().__init__(edges, name=name, label=label)
+        super().__init__(
+            edges, name=name, label=label, underflow=underflow, overflow=overflow
+        )
 
     def reduced(self, islice: slice) -> Variable:
         """
@@ -815,4 +900,10 @@ class Variable(Bin):
         lo = None if islice.start is None else islice.start - 1
         hi = -1 if islice.stop is None else islice.stop
         bins = self._bins[slice(lo, hi)]
-        return Variable(bins, name=self._name, label=self._label)
+        return Variable(
+            bins,
+            name=self._name,
+            label=self._label,
+            underflow=self._underflow,
+            overflow=self._overflow,
+        )
