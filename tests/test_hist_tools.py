@@ -5,7 +5,7 @@ import pytest
 
 cp = pytest.importorskip("cupy")
 
-import cuda_histogram  # noqa: E402
+import cuda_histogram
 
 # cupy might be installable on a device with no GPUs
 try:
@@ -26,7 +26,7 @@ def dummy_jagged_eta_pt():
 
 
 def test_hist():
-    counts, test_eta, test_pt = dummy_jagged_eta_pt()
+    _counts, test_eta, test_pt = dummy_jagged_eta_pt()
 
     h = cuda_histogram.Hist(
         cuda_histogram.axis.Regular(20, 0, 2, label="x", name="x"),
@@ -112,7 +112,7 @@ def test_hist():
 
 
 def test_partial_indexing():
-    counts, test_eta, test_pt = dummy_jagged_eta_pt()
+    _counts, test_eta, test_pt = dummy_jagged_eta_pt()
 
     h = cuda_histogram.Hist(
         cuda_histogram.axis.Regular(20, 0, 2, label="x", name="x"),
