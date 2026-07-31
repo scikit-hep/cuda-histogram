@@ -59,7 +59,6 @@ docs = [
 ]
 dev = [
   { include-group = "test" },
-  "mypy>=1.11",
 ]
 
 [project.urls]
