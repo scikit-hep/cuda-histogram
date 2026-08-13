@@ -69,6 +69,7 @@ Changelog = "https://github.com/scikit-hep/cuda-histogram/releases"
 
 
 [tool.uv]
+exclude-newer = "7 days"
 # Both wheels install the `cupy` package, so only one may be present
 conflicts = [[{ extra = "cuda12x" }, { extra = "cuda13x" }]]
 
