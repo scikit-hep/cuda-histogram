@@ -49,6 +49,7 @@ cuda13x = ["cupy-cuda13x>=13.6.0"]
 test = [
   "pytest>=6",
   "pytest-cov>=3",
+  "pytest-github-actions-annotate-failures",
 ]
 docs = [
   "sphinx>=7.0",

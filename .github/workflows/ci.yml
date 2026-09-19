@@ -6,10 +6,12 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: "37 5 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 env:
   # Many color libraries just need this to be set to any value, but at least
@@ -34,30 +36,47 @@ jobs:
         with:
           extra_args: --hook-stage manual --all-files
 
-  checks:
-    name: Check Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+  gpu-tests:
+    name: CUDA ${{ matrix.cuda-version }} Python ${{ matrix.python-version }}
     needs: [pre-commit]
+    # Self-hosted runners must not run code from forks.
+    if: >-
+      (github.event_name != 'schedule' || github.repository_owner ==
+      'scikit-hep') && (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: self-hosted
+    permissions:
+      contents: read
+    timeout-minutes: 60
+
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        cuda-version:
+          - 12
+          - 13
+        # Oldest and newest supported Python
+        python-version:
+          - "3.10"
+          - "3.14"
 
     steps:
+      - name: Clean the workspace
+        run: rm -rf * .[!.]* || echo "Nothing to clean"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Test package and generate coverage report
-        run: pipx run nox -s coverage-$PYTHON_VERSION --verbose
+        run:
+          uvx nox -s coverage-$PYTHON_VERSION --verbose --download-python always
         env:
           PYTHON_VERSION: ${{ matrix.python-version }}
+          CUDA_VERSION: ${{ matrix.cuda-version }}
 
       - name: Upload coverage report
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
