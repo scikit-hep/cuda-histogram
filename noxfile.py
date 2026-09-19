@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 from pathlib import Path
 
@@ -11,7 +12,7 @@ ALL_PYTHON = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 PROJECT = nox.project.load_toml("pyproject.toml")
 
 nox.needs_version = ">=2025.2.9"
-nox.options.sessions = ["lint", "tests"]
+nox.options.sessions = ["lint"]
 nox.options.default_venv_backend = "uv|virtualenv"
 
 
@@ -26,20 +27,29 @@ def lint(session: nox.Session) -> None:
     )
 
 
-@nox.session(reuse_venv=True, python=ALL_PYTHON)
-def tests(session: nox.Session) -> None:
+# Neither reuses its venv: the CuPy wheel is chosen by CUDA_VERSION, so a reused
+# venv would keep the one installed for whichever version ran first.
+@nox.session(python=ALL_PYTHON)
+def gpu(session: nox.Session) -> None:
     """
-    Run the unit and regular tests.
+    Run the tests on a CUDA device; CUDA_VERSION (default 13) picks the CuPy wheel.
     """
-    session.install(".", *nox.project.dependency_groups(PROJECT, "test"))
+    cuda_version = os.environ.get("CUDA_VERSION", "13")
+    # The cudaNNx extra picks the CuPy wheel; its "ctk" extra brings the CUDA
+    # runtime, which the bare wheel expects to find installed already.
+    session.install(
+        f".[cuda{cuda_version}x]",
+        f"cupy-cuda{cuda_version}x[ctk]",
+        *nox.project.dependency_groups(PROJECT, "test"),
+    )
     session.run("pytest", *session.posargs)
 
 
-@nox.session(reuse_venv=True, python=ALL_PYTHON)
+@nox.session(python=ALL_PYTHON)
 def coverage(session: nox.Session) -> None:
-    """Run tests and compute coverage."""
-    session.posargs.append("--cov=cuda_histogram")
-    tests(session)
+    """Run the tests on a CUDA device and compute coverage."""
+    session.posargs.extend(["--cov=cuda_histogram", "--cov-report=xml"])
+    gpu(session)
 
 
 @nox.session(reuse_venv=True)
