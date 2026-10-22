@@ -28,7 +28,7 @@ conflict, so select exactly one.
 All testing, and all coverage, happen on a GPU: the package cannot even be
 imported without CuPy, so there is no CPU test job. `.github/workflows/ci.yml`
 runs pre-commit on `ubuntu-latest`, then `nox -s coverage` on the scikit-hep
-self-hosted CUDA runners, matrixed over CUDA 12/13 and Python 3.10/3.14 (oldest
+self-hosted CUDA runners, matrixed over CUDA 12/13 and Python 3.11/3.14 (oldest
 and newest supported), and uploads the report to Codecov. The GPU job waits on
 pre-commit, so a PR that fails lint doesn't occupy a runner. The workflow
 triggers nightly, on pushes to `main`, on demand, and on pull requests — but the

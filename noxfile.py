@@ -8,7 +8,7 @@ from pathlib import Path
 import nox
 
 DIR = Path(__file__).parent.resolve()
-ALL_PYTHON = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+ALL_PYTHON = ["3.11", "3.12", "3.13", "3.14"]
 PROJECT = nox.project.load_toml("pyproject.toml")
 
 nox.needs_version = ">=2025.2.9"
