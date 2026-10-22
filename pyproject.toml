@@ -15,7 +15,7 @@ authors = [
 description = "Histogramming tools on CUDA."
 readme = "README.md"
 license.file = "LICENSE"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
@@ -25,7 +25,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -174,7 +173,7 @@ isort.required-imports = ["from __future__ import annotations"]
 
 
 [tool.pylint]
-py-version = "3.10"
+py-version = "3.11"
 ignore-paths = [".*/_version.py"]
 reports.output-format = "colorized"
 similarities.ignore-imports = "yes"
